@@ -57,8 +57,8 @@ input = {
 
 ```py
 output = {
-	voice_file_path: str, # 音频文件路径(MP3)
-    video_voice_lenth: float # 视频音频长度(s)
+	voice_file_path: str, # 配音文件路径(MP3)
+    video_voice_lenth: float # 视频配音长度(s)
 }
 ```
 
@@ -67,7 +67,33 @@ logic:
     - "调用TTS接口，获得音频"
 ```
 
+edge-tts
 
+--voice zh-CN-XiaoyiNeural 指定音色
+
+--text "你好" 指定文本
+
+--writemedia hello.mp3
+
+--subtitle hello.srt : 它会生成一个名为 `hello.srt` 的字幕文件。 
+
+- **制作视频**：如果你在剪辑视频（如使用剪映、美映或 Adobe Premiere），可以直接导入这个 `.srt` 文件。视频软件会自动识别时间轴，让字幕和语音同步出现。
+
+- **歌词同步**：在播放音频时，支持字幕的播放器可以像显示歌词一样同步显示当前的文本内容。
+
+- **精准对齐**：由于 `edge-tts` 能够获取到 Azure 云端返回的字级（word-level）或句级时间戳，生成的字幕时间非常精准，省去了手动对齐的麻烦。
+
+- ```text
+  1
+  00:00:00,000 --> 00:00:01,500
+  这是你要转换的
+  
+  2
+  00:00:01,500 --> 00:00:03,000
+  指定文本。
+  ```
+
+  - 字幕序号，时间轴，时分秒,毫秒
 
 ## 画面（Visual）
 
@@ -92,8 +118,8 @@ logic：
 ```py
 input = {
 	script:	str, # 视频文案
-    voice_file_path: str, # 音频文件路径(MP3)
-    video_voice_lenth: float, # 视频音频长度(s)
+    voice_file_path: str, # 配音文件路径(MP3)
+    video_voice_lenth: float, # 视频配音长度(s)
     image_file_path: str, # 配图文件路径
 }
 ```
@@ -127,3 +153,6 @@ logic：
 
 调用bilibili API
 
+# 策划
+
+用动漫人物的形象和声音讲解西哲，吸引流量。模仿东雪莲-孙笑川对话。
