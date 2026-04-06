@@ -95,7 +95,7 @@ edge-tts
 
   - 字幕序号，时间轴，时分秒,毫秒
 
-## 画面（Visual）
+## 画面（Image）
 
 ```py
 input = {
@@ -105,13 +105,54 @@ input = {
 
 ```py
 output = {
-	image_file_path: str # 配图文件路径
+	# image_file_path: str # 配图文件路径
+	imageItems: List[ImageItem]
 }
 ```
 
 logic：
 
 - 输入视频文案 -> 得到配图（v1.0是单张）
+
+**流程图建议：** `SRT 文件` $\rightarrow$ `LLM 解析` $\rightarrow$ `生成 3-5 个关键场景描述` $\rightarrow$ `循环调用生图接口` $\rightarrow$ `获取图片链接`
+
+关键帧切分
+
+生成Prompt
+
+异步调用，同时生成多张图片
+
+对齐时间轴
+
+关键帧切分（语义、场景切分）和生成promt同时扔给一个LLM做
+
+Img: {img_file_path: str, start_time: Time, end_time: Time}
+
+Time:{h, m, s, ms}
+
+### HTTP接口调用
+
+### LLM prompt生成
+
+
+
+```py
+input: 
+    - srt_content : str # srt文件
+    - scene_prompt: str # 配图场景切分
+
+output: 
+    - List[imageItem]
+        ImageItem:
+        {
+            scence_id : int,	
+            start_time: str,
+            end_time: str,
+            prompt: str
+        }
+```
+
+
 
 ## 剪辑（Editor）
 
@@ -120,7 +161,7 @@ input = {
 	script:	str, # 视频文案
     voice_file_path: str, # 配音文件路径(MP3)
     video_voice_lenth: float, # 视频配音长度(s)
-    image_file_path: str, # 配图文件路径
+    imageItems: List[ImageItem: Dict]
 }
 ```
 
@@ -134,6 +175,8 @@ output = {
 logic：python代码
 
 MoviePy库
+
+图片、音频、字幕
 
 ## 发布（Publish）
 
@@ -156,3 +199,26 @@ logic：
 # 策划
 
 用动漫人物的形象和声音讲解西哲，吸引流量。模仿东雪莲-孙笑川对话。
+
+## Python 拾遗
+
+- `json.dumps`: 将Python对象（比如字典）转化为JSON格式字符串
+- `requests`库：
+  - `requests.post(url: str, headers: json, data: json)`
+  - 对应于`curl`中的--location, --header（分多次传入）, --data
+- `response.json()`：`.json()` 方法通常用于 `requests` 库的响应对象（Response object）中，将API返回的JSON格式字符串直接解析为Python字典或列表
+
+- 字典update TODO
+
+- 文件读取为字符串
+
+  - ```py
+    # 推荐做法：使用with语句，自动关闭文件
+    with open('example.txt', 'r', encoding='utf-8') as f:
+        content = f.read()  # 读取全部内容为字符串
+    print(content)
+    ```
+
+- 文件写入 / 分块
+
+- 函数内部怎么分子函数，在里面嵌套还是在方法外面写_开头的私有工具函数，肯定是后者
