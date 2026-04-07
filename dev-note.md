@@ -148,7 +148,9 @@ output:
             scence_id : int,	
             start_time: str,
             end_time: str,
-            prompt: str
+            prompt: str,
+            img_name: str,
+            img_url: str
         }
 ```
 
@@ -160,8 +162,9 @@ output:
 input = {
 	script:	str, # 视频文案
     voice_file_path: str, # 配音文件路径(MP3)
+    srt_file_path: str, # 字幕文件路径
     video_voice_lenth: float, # 视频配音长度(s)
-    imageItems: List[ImageItem: Dict]
+    imageItems: List[ImageItem: Dict] # 配图列表
 }
 ```
 
@@ -174,9 +177,33 @@ output = {
 
 logic：python代码
 
-MoviePy库
+## MoviePy库
 
 图片、音频、字幕
+
+在 `moviepy` 的逻辑中，一切皆为 `Clip`（剪辑）。你的核心任务就是：**把图片变成视频轨，把字幕变成文字轨，把 MP3 变成音频轨，最后把它们像三明治一样叠在一起**
+
+- 剪辑(Clip)：一段有时间长度的素材
+
+  - **VideoClip (视频剪辑)：** 包含画面和声音的片段。
+  - **ImageClip (图片剪辑)：** 一张静态图。因为它没有天然的时长，你需要手动告诉它“展示几秒”。
+  - **ColorClip (颜色剪辑)：** 纯色的背景块。
+
+- 音轨
+
+  - 音轨和视频绑定但独立
+    - **绑定：** 每个 `VideoClip` 通常自带一个 `audio` 属性。
+    - **独立：** 你可以随时剥离原声、静音，或者把一段 `.mp3` 强行“粘”在视频上。
+
+- 遮罩
+
+  - **“遮罩”决定了视频哪些地方“可见”，哪些地方“透明”。**
+
+    这是最让新手头疼的概念，但你可以把它想象成一张**黑白剪纸**：
+
+    - **白色部分：** 对应的视频画面会显示出来。
+    - **黑色部分：** 对应的视频画面会变成透明（露出底下的背景）。
+    - **灰色部分：** 半透明。
 
 ## 发布（Publish）
 
