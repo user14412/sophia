@@ -1,143 +1,71 @@
-import re
-from moviepy import ImageClip, TextClip, AudioFileClip, CompositeVideoClip
+"""
+
+"""
+import json
+import os
+from uuid import uuid4
+import dotenv
+import requests
+dotenv.load_dotenv() # 从 .env 文件加载环境变量
+import asyncio
+import subprocess
+from typing import TypedDict, Annotated
 from rich import print as rprint
+import re
+import operator
+import time
 import traceback
 
-# 1. 辅助函数：SRT 时间码转秒数
-def srt_time_to_seconds(time_str):
-    """将 SRT 时间格式 '00:00:08,762' 转换为秒数 8.762"""
-    time_str = time_str.replace(',', '.') # 兼容小数点和逗号
-    h, m, s = time_str.split(':')
-    return int(h) * 3600 + int(m) * 60 + float(s)
+from moviepy import ImageClip, TextClip, AudioFileClip, CompositeVideoClip
 
-# 2. 辅助函数：解析 SRT 文件
-def parse_srt(srt_file_path):
-    with open(srt_file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-    
-    blocks = content.strip().split('\n\n')
-    subs = []
+from langchain_openai import ChatOpenAI
+from langgraph.graph.message import add_messages
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
 
-    for block in blocks:
-        lines = block.split('\n')
-        if len(lines) >= 3:
-            # 第二行是时间码，例如：00:00:00,100 --> 00:00:08,812
-            times = lines[1].split(' --> ')
-            start_sec = srt_time_to_seconds(times[0])
-            end_sec = srt_time_to_seconds(times[1])
-            # 第三行及以后是字幕文本内容
-            text = "\n".join(lines[2:])
-            subs.append({'start': start_sec, 'end': end_sec, 'text': text})
-            
-    return subs
+# 初始化大模型接口
+llm = ChatOpenAI(
+    model="deepseek-chat",
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com",
+    temperature=0.7,
+)
 
-# 3. 核心剪辑函数
-def generate_video(voice_file_path, srt_file_path, image_items, output_path="output.mp4"):
-    # 视频基础设置
-    VIDEO_SIZE = (1920, 1080) # 统一画布分辨率，防止图片尺寸不一导致报错
-    FONT_PATH = "./resources/fonts/Microsoft_YaHei.ttf"
-    
-    print("加载音频...")
-    audio = AudioFileClip(voice_file_path)
-    video_duration = audio.duration # 视频总时长以音频为准
+core_topic = "约翰·洛克"
 
-    print("构建图片轨道...")
-    image_clips = []
-    for item in image_items:
-        start_t = srt_time_to_seconds(item['start_time'])
-        end_t = srt_time_to_seconds(item['end_time'])
-        duration = end_t - start_t
+"""01 策划阶段"""
+plan_prompt = f"""
 
-        # 创建图片 Clip (这里假设 img_name 是本地可访问的有效路径)
-        # 如果图片分辨率不一致，强制调整大小或放置在画布居中位置
-        img_clip = (ImageClip(f"./resources/images/{item['img_name']}")
-                    .resized(width=VIDEO_SIZE[0]) # 适配宽度和高度
-                    .resized(height=VIDEO_SIZE[1]) # 适配宽度和高度
-                    .with_position('center')      # 居中对齐
-                    .with_start(start_t)
-                    .with_duration(duration))
-        image_clips.append(img_clip)
+###角色任务
+你是一位拥有百万粉丝的 Bilibili 知识科普类视频策划（UP主）。你擅长将枯燥的专业知识（如哲学、计算机科学等）转化为引人入胜、通俗易懂的爆款短视频。
 
-    print("构建字幕轨道...")
-    subs = parse_srt(srt_file_path)
-    text_clips = []
-    try:
-        # 定义字幕距离底部的距离 (可以根据实际效果微调)
-        y_position = VIDEO_SIZE[1] - 150
-        
-        for sub in subs:
-            # MoviePy 2.0 中 TextClip 的参数调整
-            txt_clip = (TextClip(
-                            text=sub['text'], 
-                            font=FONT_PATH,
-                            font_size=60, 
-                            color='white',
-                            stroke_color='black', # 黑色描边，防止背景太亮看不清
-                            stroke_width=2, # 描边宽度 (Must be int)
-                            method='caption',     # 允许自动换行
-                            size=(int(VIDEO_SIZE[0]*0.8), None) # 限制字幕宽度为屏幕的80%
-                        )
-                        .with_position(('center', y_position)) # 底部居中，向上偏移100像素
-                        .with_start(sub['start'])
-                        .with_duration(sub['end'] - sub['start']))
-            text_clips.append(txt_clip)
-    except Exception as e:
-        rprint(f"[red]字幕轨道构建失败: {e}[/red]")
-        return
+###输入数据
+本次视频的核心主题词是：【{core_topic}】
 
-    print("合成最终视频...")
-    try:
-        # 将图片轨和字幕轨合并（按照列表顺序，后面的会覆盖在前面的图层之上）
-        final_video = CompositeVideoClip(image_clips + text_clips, size=VIDEO_SIZE)
+###处理要求
+请根据这个核心主题，为接下来的“视频文案撰写节点”输出一份结构化的策划方案。
 
-        # 挂载音频并裁剪总时长
-        final_video = final_video.with_audio(audio).with_duration(video_duration)
-    except Exception as e:
-        rprint(f"[red]视频合成失败: {e}[/red]")
-        return
-    
-    print("开始渲染导出...")
-    try:
-        # 使用多线程和较快的预设加速渲染
-        final_video.write_videofile(
-            output_path, 
-            fps=24, 
-            codec="libx264", 
-            audio_codec="aac",
-            threads=4,          # 根据你的CPU核心数调整
-            preset="ultrafast"  # 加快渲染速度
-        )
-        print("视频渲染完成！")
-    except Exception as e:
-        rprint(f"[red]视频渲染失败: {e}[/red]")
-        traceback.print_exc()
-        return
+1. **topic (具体主题)**：将核心主题细化为一个具体可探讨的知识点。（用户给的核心主题往往过于宽泛（如“康德”），你需要将其聚焦到一个具体的知识点（如“康德的先验综合判断”），确保内容既有深度又不失趣味性，能在时间限制内充分阐述。）
 
-# 4. 执行示例 (基于你提供的数据结构)
-if __name__ == "__main__":
-    # 模拟你传入的数据结构
-    mock_image_items = [
-        {
-            "scence_id": 1,	
-            "start_time": "00:00:00,100",
-            "end_time": "00:00:08,812",
-            "prompt": "黑暗的洞穴里被束缚的人",
-            "img_name": "【哲学趣史01】柏拉图的洞穴寓言：我们生活的世界是真实的吗？_场景1.png", # 确保本地有这张图
-            "img_url": ""
-        },
-        {
-            "scence_id": 2,	
-            "start_time": "00:00:08,762",
-            "end_time": "00:00:14,312",
-            "prompt": "火光投射的影子",
-            "img_name": "【哲学趣史01】柏拉图的洞穴寓言：我们生活的世界是真实的吗？_场景2.png",
-            "img_url": ""
-        }
-    ]
-    
-    # 调用函数 (需替换为你真实的本地路径)
-    generate_video(
-        voice_file_path="./resources/voice/【哲学趣史01】柏拉图的洞穴寓言：我们生活的世界是真实的吗？.mp3", 
-        srt_file_path="./resources/voice/【哲学趣史01】柏拉图的洞穴寓言：我们生活的世界是真实的吗？.srt", 
-        image_items=mock_image_items
-    )
+2. **title (视频标题)**：设计一个具有极强吸引力、适合 B 站受众的标题。格式通常为“【系列名】主标题：副标题”。
+
+3. **video_plan_length (预计时长)**：评估该主题适合的时长，单位为秒（建议在 120.0 到 240.0 之间，即 2-4 分钟）。
+
+4. **special_requirements (文案要求)**：给下一环节的“文案写手”下达明确的指令，包括语气、风格、以及如何引入案例（如：使用生活中的幽默比喻，避免过度学术化）。
+
+###输出格式限制
+必须且仅能输出一个标准的 JSON 对象，不要使用 Markdown 代码块标签，不要在 JSON 中写任何注释，确保可以直接被 Python 解析。
+
+###输出格式示例：
+{{
+    "topic": "休谟的怀疑论：因果关系是否存在",
+    "video_plan_length": 180.0,
+    "special_requirements": "文案需生动有趣，适合大众理解。开篇用一个日常打破常理的搞笑小故事引入，中间多用生活化的比喻（如台球碰撞）来解释因果关系，结尾留有思考余地。",
+    "title": "【哲学趣史】休谟的终极怀疑：你以为的因果，只是你的错觉？"
+}}
+"""
+print("正在策划本期视频主题，请稍候...")
+plan_response = llm.invoke([SystemMessage(content=plan_prompt)])
+
+rprint(f"\n策划阶段完成，得到以下视频策划方案：{plan_response.content}")

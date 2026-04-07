@@ -38,6 +38,8 @@ class VideoState(TypedDict):
     step: str # 当前步骤
     timings: Annotated[dict, operator.ior]
 
+    core_topic: str # 核心话题：用户指定的关键词
+
     topic: str # 视频主题
     video_plan_length: float # 视频建议长度(s)
     special_requirements: str # 特殊要求
@@ -53,6 +55,67 @@ class VideoState(TypedDict):
 
     video_file_path: str # 最终生成的视频文件路径
 
+def plan_node(state: VideoState) -> VideoState:
+    start_time = time.time()
+
+
+    """01 策划阶段"""
+    core_topic = state['core_topic']
+    plan_prompt = f"""
+
+    ###角色任务
+    你是一位拥有百万粉丝的 Bilibili 知识科普类视频策划（UP主）。你擅长将枯燥的专业知识（如哲学、计算机科学等）转化为引人入胜、通俗易懂的爆款短视频。
+
+    ###输入数据
+    本次视频的核心主题词是：【{core_topic}】
+
+    ###处理要求
+    请根据这个核心主题，为接下来的“视频文案撰写节点”输出一份结构化的策划方案。
+
+    1. **topic (具体主题)**：将核心主题细化为一个具体可探讨的知识点。（用户给的核心主题往往过于宽泛（如“康德”），你需要将其聚焦到一个具体的知识点（如“康德的先验综合判断”），确保内容既有深度又不失趣味性，能在时间限制内充分阐述。）
+
+    2. **title (视频标题)**：设计一个具有极强吸引力、适合 B 站受众的标题。格式通常为“【系列名】主标题：副标题”。
+
+    3. **video_plan_length (预计时长)**：评估该主题适合的时长，单位为秒（建议在 120.0 到 180.0 之间，即 2-3 分钟）。
+
+    4. **special_requirements (文案要求)**：给下一环节的“文案写手”下达明确的指令，包括语气、风格、以及如何引入案例（如：使用生活中的幽默比喻，避免过度学术化）。
+
+    ###输出格式限制
+    必须且仅能输出一个标准的 JSON 对象，不要使用 Markdown 代码块标签，不要在 JSON 中写任何注释，确保可以直接被 Python 解析。
+
+    ###输出格式示例：
+    {{
+        "topic": "休谟的怀疑论：因果关系是否存在",
+        "video_plan_length": 180.0,
+        "special_requirements": "文案需生动有趣，适合大众理解。开篇用一个日常打破常理的搞笑小故事引入，中间多用生活化的比喻（如台球碰撞）来解释因果关系，结尾留有思考余地。",
+        "title": "【哲学趣史】休谟的终极怀疑：你以为的因果，只是你的错觉？"
+    }}
+    """
+    print("正在策划本期视频主题，请稍候...")
+    plan_response = llm.invoke([SystemMessage(content=plan_prompt)])
+    
+    rprint(f"\n策划阶段完成，得到以下视频策划方案：{plan_response.content}")
+
+    # 解析策划阶段输出的JSON数据
+    try:
+        videoPlan = json.loads(plan_response.content)
+    except json.JSONDecodeError as e:
+        print("JSONDecodeError:", e)
+    
+    state.update(videoPlan) # 将策划阶段输出的字段更新到状态中
+
+    rprint(f"\n更新状态后的视频策划方案：{state}")
+
+    return {
+        "messages": [AIMessage(content=f"策划阶段完成，本期视频标题为：{state['title']}")],
+        "step": "plan",
+        "timings": {"plan_node": time.time() - start_time},
+
+        "topic": state['topic'],
+        "video_plan_length": state['video_plan_length'],
+        "special_requirements": state['special_requirements'],
+        "title": state['title']
+    }
 
 def writer_node(state: VideoState) -> VideoState:
     start_time = time.time()
@@ -66,8 +129,11 @@ def writer_node(state: VideoState) -> VideoState:
     视频长度：{state['video_plan_length']}秒
     特殊要求：{state['special_requirements']}
 
-    固定要求：禁止在文案中夹杂输出任何有关音乐、画面、配音等方面的描述，专注于文案内容的创作。
+    固定要求：
+    [!NOTE]禁止在文案中夹杂输出任何有关音乐、画面、配音等方面的描述，专注于文案内容的创作。
         - 避免："（音乐变得神秘）"、"（画面切换到古希腊的洞穴）"、"（配音变得严肃）"等描述。
+    [!NOTE]禁止在文案中输出任何markdown格式的标记，如"#"、"**"、"```"等，确保输出的文案内容纯净无格式。
+        - 避免："**这是一个重要的观点**"、"# 引入"、"```python\nprint('Hello World')\n```"等格式化标记。
 
     输出格式：
     文案前后不要有任何多余的解释和废话，直接输出裸的视频文案内容。
@@ -181,6 +247,7 @@ def image_node(state: VideoState) -> VideoState:
         }
         payload = {
                     "model": "qwen-image-2.0-pro",
+                    # "model": "qwen-image-2.0-proqwen-image-2.0-pro-2026-03-03",
                     "input": {
                          "messages": [
                             {
@@ -198,7 +265,7 @@ def image_node(state: VideoState) -> VideoState:
                         "negative_prompt": "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲。",
                         "prompt_extend": True,
                         "watermark": False,
-                        "size": "2048*2048"
+                        "size": "1920*1080",
                     }
                 }
         
@@ -371,12 +438,14 @@ def create_search_pipeline():
 
     # 建立状态图的节点和边
     # 节点是Python函数，输入State，输出Partial State(只输出需要更新 / 聚合的字段即可)
+    workflow.add_node("plan", plan_node)
     workflow.add_node("writer", writer_node)
     workflow.add_node("voice", voice_node)
     workflow.add_node("image", image_node)
     workflow.add_node("editor", editor_node)
 
-    workflow.add_edge(START, "writer")
+    workflow.add_edge(START, "plan")
+    workflow.add_edge("plan", "writer")
     workflow.add_edge("writer", "voice")
     workflow.add_edge("voice", "image")
     workflow.add_edge("image", "editor")
@@ -388,6 +457,8 @@ def create_search_pipeline():
     return search_pipeline
 
 async def app():
+    start_time = time.time()
+
     """视频制作助手应用主函数"""
     search_pipeline = create_search_pipeline()
     print("🔍 智能视频制作助手启动！")
@@ -396,13 +467,15 @@ async def app():
     session_count = 0
     config = {"configurable": {"thread_id": f"search-session-{session_count}"}}
     
+    core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
     initial_state: VideoState = {
         "messages": [],
         "step": "plan",
-        "topic": "柏拉图的洞穴寓言",
+        "core_topic": core_topic,
+        "topic": "休谟的怀疑论哲学观点",
         "video_plan_length": 180.0, # 3分钟
         "special_requirements": "生动有趣，适合大众理解",
-        "title": "【哲学趣史01】柏拉图的洞穴寓言：我们生活的世界是真实的吗？",
+        "title": "【哲学趣史02】休谟的怀疑论：我们真的能认识世界吗？",
         "script": ""
     }
 
@@ -417,10 +490,14 @@ async def app():
                     latest_message = node_output["messages"][-1]
                     if isinstance(latest_message, AIMessage):
                         match node_name:
+                            case "plan": print(f"📝 策划阶段：{latest_message.content}")
                             case "writer": print(f"🧠 写作阶段：{latest_message.content}")
                             case "voice": print(f"🎤 配音阶段：{latest_message.content}")
                             case "image": print(f"🖼️ 画面阶段：{latest_message.content}")
                             case "editor": print(f"✂️ 剪辑阶段：{latest_message.content}")
+
+        timings = time.time() - start_time
+        print(f"\n🎉 视频制作流程完成！总耗时：{timings:.2f}秒")
         print("\n" + "=" * 60 + "\n")
 
     except Exception as e:
