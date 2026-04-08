@@ -95,18 +95,38 @@ def text_to_image_generation_qwen_v1(image_item: imageItem) -> imageItem:
                     "size": "1920*1080",
                 }
             }
-        
-    print("正在发送生图请求，请稍候...")
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        response.raise_for_status()
-        result = response.json()
-        print("\n✅ 文生图请求成功！")
-        # print(json.dumps(result, indent=4, ensure_ascii=False))
-        image_item.update({"img_url": result.get("output", {}).get("choices", [{}])[0].get("message", {}).get("content", {})[0].get("image", "")})
-
-    except Exception as e:
-        print(f"文生图请求失败: {e}")
+    
+    # request 调用文生图接口
+    print("🚀 正在发送生图请求，请稍候...")
+    # --- 退避重试配置 ---
+    base_delay = 2        # 初始等待 2 秒
+    max_delay = 90        # 最大等待 90 秒
+    current_delay = base_delay
+    max_attempts = 10     # 最大尝试次数，防止死循环
+    attempt = 0
+    while attempt < max_attempts:
+        attempt += 1
+        if attempt > 1:
+            print(f"⏳ 正在进行第 {attempt} 次重试，等待 {current_delay} 秒...")
+            time.sleep(current_delay)
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            response.raise_for_status()
+            result = response.json()
+            img_url = result.get("output", {}).get("choices", [{}])[0].get("message", {}).get("content", {})[0].get("image", "")
+            image_item.update({"img_url": img_url})
+            print("\n✅ 文生图请求成功！")
+            break # 跳出重试循环
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 429:
+                print(f"⚠️ 第 {attempt} 次尝试：触发限流 (429)。")
+                if attempt < max_attempts:
+                    current_delay = min(current_delay * 2, max_delay)
+                    continue
+            raise
+        except Exception as e:
+            print(f"❌ 文生图发生未知错误: {e}")
+            raise
                         
     # 下载生成的图片URL
     img_url = image_item.get("img_url", "")
@@ -114,19 +134,18 @@ def text_to_image_generation_qwen_v1(image_item: imageItem) -> imageItem:
         print(f"\n生成的图片URL: {img_url}")
     else:
         print("\n⚠️ 服务器返回的结果中未找到图片URL。")
+        raise RuntimeError("empty_image_url")
 
-        img_title = image_item.get("img_name", f"image_{uuid4()}.png")
-        image_item['img_local_path'] = str(IMAGE_OUTPUT_DIR / img_title)
-        with requests.get(img_url, headers={"Authorization": f"Bearer {os.getenv('DASHSCOPE_API_KEY')}"}, stream=True) as r:
-            r.raise_for_status()
-            with open(image_item['img_local_path'], 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        print(f"\n图片已成功下载并保存到: {image_item['img_local_path']}")
+    img_title = image_item.get("img_name", f"image_{uuid4()}.png")
+    image_item['img_local_path'] = str(IMAGE_OUTPUT_DIR / img_title)
+    with requests.get(img_url, headers={"Authorization": f"Bearer {os.getenv('DASHSCOPE_API_KEY')}"}, stream=True) as r:
+        r.raise_for_status()
+        with open(image_item['img_local_path'], 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+    print(f"\n图片已成功下载并保存到: {image_item['img_local_path']}")
 
     return image_item
-
-
 
 def image_node(state: VideoState) -> VideoState:
     start_time = time.time()

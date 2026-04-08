@@ -24,7 +24,7 @@ def create_search_pipeline():
     workflow.add_node("plan", plan_node)
     workflow.add_node("writer", writer_node)
     workflow.add_node("voice", voice_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
-    workflow.add_node("image", image_node,retry_policy=RetryPolicy(max_attempts=3, initial_interval=10.0))
+    workflow.add_node("image", image_node)
     workflow.add_node("editor", editor_node)
 
     workflow.add_edge(START, "plan")

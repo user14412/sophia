@@ -47,10 +47,10 @@ class VideoState(TypedDict):
 
     core_topic: str # 核心话题：用户指定的关键词
 
+    title: str # 视频标题
     topic: str # 视频主题
     video_plan_length: float # 视频建议长度(s)
     special_requirements: str # 特殊要求
-    title: str # 视频标题
     
     script: str # 视频文案
 
