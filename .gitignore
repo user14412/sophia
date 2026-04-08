@@ -17,3 +17,5 @@ resources/videos/output/*
 
 # 模型文件
 asset/*
+src/asset/*
+!src/asset/.gitkeep

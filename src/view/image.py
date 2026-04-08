@@ -1,19 +1,20 @@
-
-import os
-from typing import TypedDict
+import time
 import json
+import subprocess
 import requests
-from rich import print as rprint
 from uuid import uuid4
+from rich import print as rprint
+import re
+import os 
 
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-from config import llm
-from config import imageItem
+from config import VideoState,llm, imageItem, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR
+
+
 
 def scene_split(srt_path: str) -> list[imageItem]:
     """场景切分：根据srt字幕，生成对应的List[{场景 + 时间轴 + prompt}]"""
-    # srt_path = "./resources/voice/【哲学趣史01】柏拉图的洞穴寓言：我们生活的世界是真实的吗？.srt"
     with open(srt_path, "r", encoding="utf-8") as f:
         srt_content = f.read()
     scene_prompt = f"""
@@ -115,10 +116,95 @@ def text_to_image_generation_qwen_v1(image_item: imageItem) -> imageItem:
         print("\n⚠️ 服务器返回的结果中未找到图片URL。")
 
         img_title = image_item.get("img_name", f"image_{uuid4()}.png")
-        image_item['img_local_path'] = f"./resources/images/{img_title}"
+        image_item['img_local_path'] = str(IMAGE_OUTPUT_DIR / img_title)
         with requests.get(img_url, headers={"Authorization": f"Bearer {os.getenv('DASHSCOPE_API_KEY')}"}, stream=True) as r:
             r.raise_for_status()
             with open(image_item['img_local_path'], 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
         print(f"\n图片已成功下载并保存到: {image_item['img_local_path']}")
+
+    return image_item
+
+
+
+def image_node(state: VideoState) -> VideoState:
+    start_time = time.time()
+
+    image_items = scene_split(state['voice']["srt_local_path"])
+
+    for idx, image_item in enumerate(image_items):
+        print(f"\n正在为场景 {image_item['scene_id']} 生成图片...")
+        image_item = text_to_image_generation_qwen_v1(image_item)
+        image_items[idx] = image_item
+
+    print(f"\n🎨 场景图片生成完成！耗时：{time.time() - start_time:.2f}秒\n")
+
+    return{
+        "messages": [AIMessage(content="场景图片已生成")],
+        "step": "image",
+        "images": image_items,
+        "timings": {"image_node": time.time() - start_time}
+    }
+
+if __name__ == "__main__":
+    mock_video_state = VideoState(
+        messages=[],
+        step="image",
+        timings={},
+        core_topic="测试主题",
+        topic="测试视频主题",
+        video_plan_length=120.0,
+        special_requirements="无",
+        title="测试视频_罗素",
+
+        script="这是一个测试视频的脚本。",
+        voice={
+            "voice_local_path": str(VOICE_OUTPUT_DIR / "8b06efd3-bd1c-445a-8d84-3c53c354c2e8.mp3"),
+            "srt_local_path": str(VOICE_OUTPUT_DIR / "8b06efd3-bd1c-445a-8d84-3c53c354c2e8.srt"),
+            "voice_length": 184.19
+        },
+        images=[
+            {
+        'scene_id': 1,
+        'start_time': '00:00:00,000',
+        'end_time': '00:00:21,139',
+        'prompt': '一个光线略显昏暗的复古理发店内部，门口玻璃上贴着一张泛黄的告示，上面写着关于理发师刮胡子的奇怪规定。一位顾客站在店内，手摸着光滑的下巴，脸上露出困惑的表情。理发师站在一旁，面带微笑，但他自己却留着浓密的胡子。画面采用写实电影感风格，带有柔和的侧光，营造出一种略带诡异和悬疑的氛围。',
+        'img_name': 'img_1',
+        'img_url': None,
+        'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_1.png')
+    },
+    {
+        'scene_id': 2,
+        'start_time': '00:00:21,139',
+        'end_time': '00:01:49,628',
+        'prompt': '画面分裂为两个对称的镜面世界。左侧，理发师手持剃刀，正对着镜子准备给自己刮胡子，但他的动作凝固了，脸上是逻辑冲突的挣扎。右侧，理发师放下剃刀，拒绝给自己刮胡子，但镜中的规则文字如锁链般缠绕着他。背景中浮现出抽象的集合符号和目录书架，象征着悖论的数学本质。整体是超现实的、带有轻微赛博朋克霓虹色调的插画风格，强调逻辑的纠缠与困境。',
+        'img_name': 'img_2',
+        'img_url': None,
+        'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_2.png')
+    },
+    {
+        'scene_id': 3,
+        'start_time': '00:01:49,628',
+        'end_time': '00:03:08,217',
+        'prompt': '一个宏大的、由无数齿轮、电路和数学公式构成的抽象结构，象征着数学大厦与逻辑体系。结构的一角出现了理发师悖论引发的裂缝，裂缝中透出光芒。裂缝蔓延，连接至计算机代码流和哥德尔不完备定理的符号。最后，画面定格在一面现代浴室镜前，镜中映出观众自己的模糊倒影，剃须泡沫还挂在脸上。风格是融合了写实细节与概念艺术的电影海报感，色调从危机的灰暗转向思考的深邃蓝色。',
+        'img_name': 'img_3',
+        'img_url': None,
+        'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_3.png')
+    }
+        ],
+        video_file_path=""
+    )
+    # print("=== 测试 image_node ===")
+    # image_node(mock_video_state)
+    print("=== 测试 文生图接口 ===")
+    # test_image_items = mock_video_state["images"]
+    # for idx, image_item in enumerate(test_image_items):
+    #     print(f"\n正在为场景 {image_item['scene_id']} 生成图片...")
+    #     image_item = text_to_image_generation_qwen_v1(image_item)
+    #     test_image_items[idx] = image_item
+    
+    # rprint("生成的图片信息列表:")
+    # for item in test_image_items:
+    #     rprint(f"  - {item['img_local_path']}.png: {item['img_url']}")
+    text_to_image_generation_qwen_v1(mock_video_state["images"][2])

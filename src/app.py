@@ -10,7 +10,9 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import RetryPolicy
 
 from config import llm, VideoState
-from view.view import voice_node, image_node, editor_node
+from view.image import image_node
+from view.voice import voice_node
+from view.editor import editor_node
 from content.content import plan_node, writer_node
 
 def create_search_pipeline():
@@ -22,7 +24,7 @@ def create_search_pipeline():
     workflow.add_node("plan", plan_node)
     workflow.add_node("writer", writer_node)
     workflow.add_node("voice", voice_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
-    workflow.add_node("image", image_node,retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
+    workflow.add_node("image", image_node,retry_policy=RetryPolicy(max_attempts=3, initial_interval=10.0))
     workflow.add_node("editor", editor_node)
 
     workflow.add_edge(START, "plan")

@@ -4,10 +4,18 @@ import dotenv
 dotenv.load_dotenv() # 从 .env 文件加载环境变量
 from typing import TypedDict, Annotated
 import operator
+from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph.message import add_messages
 
+
+"""路径处理"""
+RESOURCES_DIR = Path(__file__).parent.parent / "resources" # 获取当前脚本的绝对路径
+VOICE_OUTPUT_DIR = RESOURCES_DIR / "voice" / "output"
+IMAGE_OUTPUT_DIR = RESOURCES_DIR / "images"
+VIDEO_OUTPUT_DIR = RESOURCES_DIR / "videos" / "output"
+FONT_DIR = RESOURCES_DIR / "fonts"
 
 # 初始化大模型接口
 llm = ChatOpenAI(

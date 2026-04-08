@@ -36,7 +36,7 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
     """将完全对齐的音频、图片和字幕合成最终视频"""
     # 视频基础设置
     VIDEO_SIZE = (1920, 1080) # 统一画布分辨率，防止图片尺寸不一导致报错
-    FONT_PATH = "./resources/fonts/Microsoft_YaHei.ttf"
+    FONT_PATH = "../resources/fonts/Microsoft_YaHei.ttf"
     
     print("加载音频...")
     audio = AudioFileClip(voice_file_path)
@@ -51,7 +51,7 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
 
         # 创建图片 Clip (这里假设 img_name 是本地可访问的有效路径)
         # 如果图片分辨率不一致，强制调整大小或放置在画布居中位置
-        img_clip = (ImageClip(f"./resources/images/{item['img_name']}")
+        img_clip = (ImageClip(f"../resources/images/{item['img_name']}")
                     .resized(width=VIDEO_SIZE[0]) # 适配宽度和高度
                     .resized(height=VIDEO_SIZE[1]) # 适配宽度和高度
                     .with_position('center')      # 居中对齐
