@@ -2,16 +2,14 @@ import os
 import re
 import math
 import numpy as np
+import rich
 import soundfile as sf
 from pydub import AudioSegment
 import torch
+import ChatTTS
 
-# 如果你还没有安装 pydub，请在终端执行: pip install pydub
-# 注意: pydub 导出 MP3 需要系统安装并配置好 FFmpeg
+from rich import print as rprint
 
-# ==========================================
-# 1. 基础数据结构 (Data Structure)
-# ==========================================
 class AudioChunk:
     """定义流水线中流转的最小数据单元"""
     def __init__(self, speaker: str, text: str):
@@ -23,7 +21,7 @@ class AudioChunk:
         self.end_time: float = 0.0          # 在总时间轴上的结束时间
 
 # ==========================================
-# 2. TTS 策略接口与实现 (Strategy Pattern)
+# TTS 策略接口与实现
 # ==========================================
 class BaseTTSProvider:
     """TTS 引擎的基类，定义统一的标准接口"""
@@ -40,18 +38,43 @@ class ChatTTSProvider(BaseTTSProvider):
         self.chat.load(compile=False) 
         
         # 预设两个说话人的随机种子 (伪代码，ChatTTS有专门抽卡音色的API，这里以固定参数模拟)
-        self.speakers = {
-            "A": 1111, # 假设 1111 是个男声
-            "B": 2222  # 假设 2222 是个女声
+        self.speakers= {
+            "A": 25200, # 假设 25200 是个男声
+            "B": 24000  # 假设 24000 是个女声
         }
         self.sample_rate = 24000
 
     def generate(self, text: str, speaker_id: str) -> tuple[np.ndarray, float]:
         # 获取对应的音色参数
-        # seed = self.speakers.get(speaker_id, 1111)
+        seed = self.speakers.get(speaker_id, 1111)
+
+        # # 2. 【核心修复】：强制劫持全局随机种子
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        # 因为你现在用显卡推理，强烈建议一并固定 CUDA 的种子
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
+        # 3. 这时候再调用（不要传参！），它就会固定生成与 seed 对应的音色张量
+        spk_emb = self.chat.sample_random_speaker()
+        rprint(type(spk_emb)) 
         
-        # 重点：为了规避之前遇到的 narrow() 报错，单句传入，且开启 skip_refine_text
-        wavs = self.chat.infer(text, skip_refine_text=True)
+        # 使用源码里的InferCodeParam类包装参数传参
+        params = ChatTTS.Chat.InferCodeParams(
+            spk_emb=spk_emb,
+            temperature=0.3,  # 默认为0.3左右，降到0.001彻底消除随机漂移
+            top_P=0.7,       # 过滤掉低概率的杂音
+            top_K=20,        # 限制候选范围
+        )
+
+        wavs = self.chat.infer(
+            text,
+            skip_refine_text=True,
+            params_infer_code=params,
+        )
         
         # 提取 numpy 数组并降维成一维数组 (如果是 [1, T] 的话)
         audio_array = wavs[0]
@@ -118,7 +141,10 @@ class ScriptParserNode:
                     temp_text = ""
             if temp_text.strip():
                 chunks.append(AudioChunk(speaker=speaker, text=temp_text.strip()))
-                
+            
+        # print("解析脚本行得到下面的 Chunk：")
+        # for chunk in chunks:
+        #     print(f"  - [{chunk.speaker}] {chunk.text}")
         return chunks
 
 class AudioGenerationNode:
@@ -196,8 +222,10 @@ if __name__ == "__main__":
     # 模拟你编写的纯文本脚本
     raw_script = """
     A: 欢迎来到我们的频道。这是我们使用自动化管线生成的第一段音频！
-    B: 没错！哪怕是长文本，我们也可以通过程序把它切分成一小块一小块的，然后再拼接起来。
+    B: 没错，哪怕是长文本，我们也可以通过程序把它切分成一小块一小块的，然后再拼接起来。
     A: 而且你看，现在的字幕和声音是完全对齐的，因为时间轴是我们通过数组长度精确算出来的。
+    B： 这就是我们这个流水线的核心优势：自动化、可控、且质量稳定！
+    A： 未来我们还可以接入更多的 TTS 引擎，甚至是不同语言的模型，让它变得更加强大和多样化。
     """
     
     # 初始化流水线组件
