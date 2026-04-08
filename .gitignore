@@ -14,3 +14,6 @@ resources/voice/*
 !resources/voice/.gitkeep
 resources/videos/output/*
 !resources/videos/output/.gitkeep
+
+# 模型文件
+asset/*

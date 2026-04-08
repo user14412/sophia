@@ -1,0 +1,95 @@
+"""
+
+"""
+import time
+import asyncio
+
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langgraph.types import RetryPolicy
+
+from config import llm, VideoState
+from view.view import voice_node, image_node, editor_node
+from content.content import plan_node, writer_node
+
+def create_search_pipeline():
+    """创建一个简单的视频制作流程："""
+    workflow = StateGraph(VideoState) # 根据状态结构定义状态图的结构
+
+    # 建立状态图的节点和边
+    # 节点是Python函数，输入State，输出Partial State(只输出需要更新 / 聚合的字段即可)
+    workflow.add_node("plan", plan_node)
+    workflow.add_node("writer", writer_node)
+    workflow.add_node("voice", voice_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
+    workflow.add_node("image", image_node,retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
+    workflow.add_node("editor", editor_node)
+
+    workflow.add_edge(START, "plan")
+    workflow.add_edge("plan", "writer")
+    workflow.add_edge("writer", "voice")
+    workflow.add_edge("voice", "image")
+    workflow.add_edge("image", "editor")
+    workflow.add_edge("editor", END)
+
+    memory = InMemorySaver() # 内存临时存储检查点
+    search_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
+
+    # Show the structure of the compiled pipeline
+    # 在Jyputer Notebook中可以查看图片，但要先把下面的main改成 await 因为jupyter本身就已经有一个事件循环了
+    print("视频制作流程已编译完成，流程结构如下：")
+    from IPython.display import Image, display
+    display(Image(search_pipeline.get_graph(xray=True).draw_mermaid_png()))
+
+    return search_pipeline
+
+async def app():
+    start_time = time.time()
+
+    """视频制作助手应用主函数"""
+    search_pipeline = create_search_pipeline()
+    print("🔍 智能视频制作助手启动！")
+
+
+    session_count = 0
+    config = {"configurable": {"thread_id": f"search-session-{session_count}"}}
+    
+    core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
+    initial_state: VideoState = {
+        "messages": [],
+        "step": "plan",
+        "core_topic": core_topic,
+        "topic": "休谟的怀疑论哲学观点",
+        "video_plan_length": 180.0, # 3分钟
+        "special_requirements": "生动有趣，适合大众理解",
+        "title": "【哲学趣史02】休谟的怀疑论：我们真的能认识世界吗？",
+        "script": ""
+    }
+
+    # 执行工作流
+    try:
+        print("=" * 60)
+
+        # 实时打印AI输出结果
+        async for output in search_pipeline.astream(initial_state, config=config):
+            for node_name, node_output in output.items():
+                if "messages" in node_output and node_output["messages"]:
+                    latest_message = node_output["messages"][-1]
+                    if isinstance(latest_message, AIMessage):
+                        match node_name:
+                            case "plan": print(f"📝 策划阶段：{latest_message.content}")
+                            case "writer": print(f"🧠 写作阶段：{latest_message.content}")
+                            case "voice": print(f"🎤 配音阶段：{latest_message.content}")
+                            case "image": print(f"🖼️ 画面阶段：{latest_message.content}")
+                            case "editor": print(f"✂️ 剪辑阶段：{latest_message.content}")
+
+        timings = time.time() - start_time
+        print(f"\n🎉 视频制作流程完成！总耗时：{timings:.2f}秒")
+        print("\n" + "=" * 60 + "\n")
+
+    except Exception as e:
+        print(f"❌ 发生错误：{str(e)}")
+        print("请重新输入您的问题，或检查您的网络连接和API密钥配置。")
+                                
+if __name__ == "__main__":
+    asyncio.run(app())
