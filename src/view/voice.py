@@ -339,13 +339,33 @@ class ExportNode:
 
         # 优化：添加数学静音机制，在每个句子之间插入适当长度的静音，以模拟自然的停顿，提升听感
         all_audio_arrays = []
+        srt_content = ""
+
+        # 引入真实的全局时间轴游标
+        current_true_time = 0.0
         
         for i, chunk in enumerate(chunks):
             # 1. 把当前句子的音频加进去
             if chunk.audio_array is not None:
+                # 修正当前句子的实际起止时间 (覆盖掉之前生成节点算的旧时间)
+                chunk.start_time = current_true_time
+                chunk.end_time = current_true_time + chunk.duration
+
                 all_audio_arrays.append(chunk.audio_array)
+
+                # 2. 实时生成字幕记录 (基于加入静音后的真实时间)
+                start_str = _format_srt_time(chunk.start_time)
+                end_str = _format_srt_time(chunk.end_time)
+
+                # SRT 标准格式: 序号 \n 开始时间 --> 结束时间 \n 文本 \n\n
+                srt_content += f"{i + 1}\n"
+                srt_content += f"{start_str} --> {end_str}\n"
+                srt_content += f"{chunk.text}\n\n"
+
+                # 游标推进：加上这段语音本身的长度
+                current_true_time += chunk.duration
             
-            # 2. 判断是否需要插入静音停顿 (最后一句不需要加)
+            # 3. 判断是否需要插入静音停顿 (最后一句不需要加)
             if i < len(chunks) - 1:
                 next_chunk = chunks[i+1]
                 
@@ -356,6 +376,9 @@ class ExportNode:
                 # 生成纯静音数组 (长度 = 停顿秒数 * 采样率)
                 silence_array = np.zeros(int(pause_duration * sample_rate), dtype=np.float32)
                 all_audio_arrays.append(silence_array)
+
+                # 🚨 核心修复：游标也要跟着推进静音的长度！这样下一句话的起止时间才会准确推迟。
+                current_true_time += pause_duration
 
         # 把语音和静音交替拼接起来
         master_audio_array = np.concatenate(all_audio_arrays, axis=0)
