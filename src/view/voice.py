@@ -268,7 +268,8 @@ class ScriptParserNode:
             3. **切分与字数控制**：
                - 每个 `text` 的字数严格控制在 **30-50** 个字之间。
                - 切分点必须是句号、问号、感叹号或自然的语义转折处。
-               - **【重要】**：必须保留原有的末尾标点符号。
+               - 将一句末尾的部分句号替换为省略号 ... 或破折号 ——，方便TTS引擎发出轻微尾音。
+               - 如果有些词语之间需要停顿，适当多使用逗号。GPT-SoVITS 遇到逗号时，天然会生成一个小小的停顿和微弱的换气感。
 
             【输出格式要求】
             只输出纯净的 JSON 数组，严禁包含 Markdown 代码块标记（```json）或任何碎碎念。
@@ -332,8 +333,31 @@ class ExportNode:
     """节点 3：将所有碎片合并，导出为 MP3 和 SRT"""
     @staticmethod
     def export(chunks: list[AudioChunk], output_name="final_output", sample_rate=32000):
-        # 1. 合并音频数组 (Concatenate)
-        all_audio_arrays = [chunk.audio_array for chunk in chunks if chunk.audio_array is not None]
+        # # 1. 合并音频数组 (Concatenate)
+        # all_audio_arrays = [chunk.audio_array for chunk in chunks if chunk.audio_array is not None]
+        # master_audio_array = np.concatenate(all_audio_arrays, axis=0)
+
+        # 优化：添加数学静音机制，在每个句子之间插入适当长度的静音，以模拟自然的停顿，提升听感
+        all_audio_arrays = []
+        
+        for i, chunk in enumerate(chunks):
+            # 1. 把当前句子的音频加进去
+            if chunk.audio_array is not None:
+                all_audio_arrays.append(chunk.audio_array)
+            
+            # 2. 判断是否需要插入静音停顿 (最后一句不需要加)
+            if i < len(chunks) - 1:
+                next_chunk = chunks[i+1]
+                
+                # 策略：如果是同一个人继续说话，停顿短一点 (例如 0.4 秒)
+                # 如果是切换角色对话，停顿长一点 (例如 0.8 秒)
+                pause_duration = 0.4 if chunk.speaker == next_chunk.speaker else 0.8
+                
+                # 生成纯静音数组 (长度 = 停顿秒数 * 采样率)
+                silence_array = np.zeros(int(pause_duration * sample_rate), dtype=np.float32)
+                all_audio_arrays.append(silence_array)
+
+        # 把语音和静音交替拼接起来
         master_audio_array = np.concatenate(all_audio_arrays, axis=0)
         
         # 保存为临时的 wav 文件
