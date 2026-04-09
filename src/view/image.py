@@ -13,11 +13,30 @@ from langgraph.types import Command
 from config import VideoState,llm, imageItem, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR
 
 
+def _srt_time_to_seconds(time_str: str) -> float:
+    time_str = time_str.replace(',', '.')
+    h, m, s = time_str.split(':')
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def _get_scene_count_from_srt(srt_path: str) -> int:
+    with open(srt_path, "r", encoding="utf-8") as f:
+        srt_content = f.read()
+
+    time_matches = re.findall(r"\d{2}:\d{2}:\d{2}[,.]\d{3}", srt_content)
+    if not time_matches:
+        return 1
+
+    total_duration_seconds = _srt_time_to_seconds(time_matches[-1])
+    return max(1, int(total_duration_seconds // 120))
+
 
 def scene_split(srt_path: str) -> list[imageItem]:
     """场景切分：根据srt字幕，生成对应的List[{场景 + 时间轴 + prompt}]"""
     with open(srt_path, "r", encoding="utf-8") as f:
         srt_content = f.read()
+    scene_count = _get_scene_count_from_srt(srt_path)
+    print(f"我打算生成 {scene_count} 张图。")
     scene_prompt = f"""
     ### 角色任务
     你是一位专业的视频导演和视觉美术指导。请根据提供的 SRT 字幕内容，将其划分为多个连续的视觉场景。
@@ -26,7 +45,7 @@ def scene_split(srt_path: str) -> list[imageItem]:
     {srt_content}
 
     ### 处理要求
-    1. **语义切分**：将整个字幕根据情节转折、情感变化或物理空间的变化，切分为 2-3 个逻辑连续的场景。
+    1. **语义切分**：将整个字幕根据情节转折、情感变化或物理空间的变化，切分为 {max(1, scene_count -1)} - {scene_count + 1} 个逻辑连续的场景。
     2. **时间连续性**：场景的时间轴必须严丝合缝，确保前一个场景的 end_time 等于后一个场景的 start_time，覆盖整个字幕时长。
     3. **生图 Prompt 设计**：为每个场景编写一段详细的视觉描述（Prompt）。
     - 描述画面主体、光影、艺术风格（例如：赛博朋克、吉卜力风、写实电影感）。

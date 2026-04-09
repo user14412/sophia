@@ -19,3 +19,5 @@ resources/videos/output/*
 asset/*
 src/asset/*
 !src/asset/.gitkeep
+models/*
+!models/.gitkeep
