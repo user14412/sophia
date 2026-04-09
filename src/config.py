@@ -55,10 +55,14 @@ class Feedback(TypedDict):
     # max_attempts：写在VideoState的config字段里；该字段不需要在状态中更新，该字段还包括是否开启 AI自我反思 / 人类在环 等配置项
 
 class VideoStateConfig(TypedDict):
-    max_attempts: int # AI反馈最大尝试次数
-    enable_ai_reflection: bool # 是否开启 AI自我反思
-    enable_human_in_the_loop: bool # 是否开启 人类在环
+    max_attempts: int | None # AI反馈最大尝试次数
+    enable_ai_reflection: bool | None # 是否开启 AI自我反思
+    enable_human_in_the_loop: bool | None # 是否开启 人类在环
 
+class DraftItem(TypedDict):
+    section_id: int | None
+    section_description: str | None
+    section_script: str | None
 
 # 定义全局状态结构
 class VideoState(TypedDict):
@@ -74,6 +78,11 @@ class VideoState(TypedDict):
 
     proposal : Proposal # 策划阶段输出的策划方案，包括视频标题、主题、建议长度、特殊要求等
     
+    # outline只填充大纲内容，不填充草稿item的文案细节
+    # writer阶段填充文案细节
+    draft: list[DraftItem] 
+
+    # polish阶段输出最终文案，填充到script字段中
     script: str # 视频文案
 
     voice: VoiceItem # 配音信息

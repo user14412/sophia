@@ -10,14 +10,13 @@ from langgraph.types import Command
 
 from config import llm, VideoState, Proposal
 
-def plan_node(state: VideoState) -> VideoState | Command:
+def plan_node(state: VideoState) -> Command:
     start_time = time.time()
 
-
-    """01 策划阶段"""
     core_topic = state['core_topic']
     match state["step"]:
         case "init":
+            print("从init进入策划节点，开始策划阶段")
             plan_prompt = f"""
 
             ###角色任务
@@ -49,15 +48,19 @@ def plan_node(state: VideoState) -> VideoState | Command:
             }}
             """
         case "plan_feedback":
+           print("根据反馈重新策划中，请稍候...")
            if state['feedback']['status'] == "Accepted":
                 print("上一轮策划案已经被接受，不继续执行，step字段置为plan，进入下一阶段")
                 """在这里退出反馈循环"""
-                return {
-                    "messages": [AIMessage(content=f"策划阶段完成，本期视频策划案为：{state['proposal']}")],
-                    "step": "plan",
-                    "timings": {"plan_node": time.time() - start_time},
-                    "proposal": state['proposal']
-                }
+                return Command(
+                    update={
+                        "messages": [AIMessage(content=f"策划阶段完成，本期视频策划案为：{state['proposal']}")],
+                        "step": "plan",
+                        "timings": {"plan_node": time.time() - start_time},
+                        "proposal": state['proposal']
+                    },
+                    goto="outline"
+                )
            else:
                plan_prompt = f"""
                 ### 角色与任务
@@ -105,17 +108,20 @@ def plan_node(state: VideoState) -> VideoState | Command:
 
     """决定接下来进入反馈节点还是直接进入下一阶段"""
     """加这一行判断，是因为step == init && enable_human_in_the_loop == False 的情况下，直接return即可"""
-    if state["step"] == "init" and not state["video_state_config"]["enable_human_in_the_loop"]:
+    if state["step"] == "init" and state["video_state_config"]["enable_human_in_the_loop"] == False:
         print("未开启人类在环，直接进入下一阶段")
-        return {
-            "messages": [AIMessage(content=f"策划阶段完成，本期视频策划案为：{state['proposal']}")],
-            "step": "plan",
-            "timings": {"plan_node": time.time() - start_time},
+        return Command(
+            update={
+                "messages": [AIMessage(content=f"策划阶段完成，本期视频策划案为：{state['proposal']}")],
+                "step": "plan",
+                "timings": {"plan_node": time.time() - start_time},
 
-            "proposal": proposal
-        }
-    """要么是初始状态下开启了人类在环，要么就是反馈状态下的再次策划，这两种情况都需要进入反馈节点"""
-    if state["video_state_config"]["enable_human_in_the_loop"]:
+                "proposal": proposal
+            },
+            goto="outline"
+        )
+    elif state["video_state_config"]["enable_human_in_the_loop"] == True:
+        """要么是初始状态下开启了人类在环，要么就是反馈状态下的再次策划，这两种情况都需要进入反馈节点"""
         print("进入反馈节点")
         return Command(
             # state update
@@ -129,3 +135,5 @@ def plan_node(state: VideoState) -> VideoState | Command:
             # control flow
             goto="feedback"
         )
+    else:
+        raise ValueError(f"未知的状态组合：step={state['step']}，enable_human_in_the_loop={state['video_state_config']['enable_human_in_the_loop']}，无法决定下一步流程走向。")

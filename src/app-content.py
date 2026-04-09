@@ -16,6 +16,7 @@ from view.voice import voice_node
 from view.editor import editor_node
 from content.writer import writer_node
 from content.plan import plan_node
+from content.outline import outline_node
 from content.feedback import feedback_node
 
 def create_search_pipeline():
@@ -25,15 +26,15 @@ def create_search_pipeline():
     # 建立状态图的节点和边
     # 节点是Python函数，输入State，输出Partial State(只输出需要更新 / 聚合的字段即可)
     workflow.add_node("plan", plan_node)
-    workflow.add_node("writer", writer_node)
-    workflow.add_node("voice", voice_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
-    workflow.add_node("image", image_node)
-    workflow.add_node("editor", editor_node)
+    workflow.add_node("outline", outline_node)
+    # workflow.add_node("voice", voice_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
+    # workflow.add_node("image", image_node)
+    # workflow.add_node("editor", editor_node)
 
     workflow.add_node("feedback", feedback_node) # 反馈节点，处理人类 / AI反馈信息
 
+    # 删掉所有静态边，统一用Command
     workflow.add_edge(START, "plan")
-    workflow.add_edge("plan", END)
 
     memory = InMemorySaver() # 内存临时存储检查点
     search_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
@@ -55,7 +56,7 @@ async def app():
 
 
     session_count = 0
-    config = {"configurable": {"thread_id": f"search-session-{session_count}"}}
+    config = {"configurable": {"thread_id": f"session-{session_count}"}}
 
     video_state_config = VideoStateConfig(
         max_attempts=3,
@@ -97,7 +98,7 @@ async def app():
                             case "image": print(f"🖼️ 画面阶段：{latest_message.content}")
                             case "editor": print(f"✂️ 剪辑阶段：{latest_message.content}")
                             case "feedback": print(f"🔄 反馈阶段：{latest_message.content}")
-
+                            case "outline": print(f"🧾 大纲阶段：{latest_message.content}")
         timings = time.time() - start_time
         print(f"\n🎉 视频制作流程完成！总耗时：{timings:.2f}秒")
         print("\n" + "=" * 60 + "\n")
