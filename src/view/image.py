@@ -8,6 +8,7 @@ import re
 import os 
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langgraph.types import Command
 
 from config import VideoState,llm, imageItem, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR
 
@@ -147,7 +148,7 @@ def text_to_image_generation_qwen_v1(image_item: imageItem) -> imageItem:
 
     return image_item
 
-def image_node(state: VideoState) -> VideoState:
+def image_node(state: VideoState) -> Command:
     start_time = time.time()
 
     image_items = scene_split(state['voice']["srt_local_path"])
@@ -159,12 +160,15 @@ def image_node(state: VideoState) -> VideoState:
 
     print(f"\n🎨 场景图片生成完成！耗时：{time.time() - start_time:.2f}秒\n")
 
-    return{
-        "messages": [AIMessage(content="场景图片已生成")],
-        "step": "image",
-        "images": image_items,
-        "timings": {"image_node": time.time() - start_time}
-    }
+    return Command(
+        update={
+            "messages": [AIMessage(content="场景图片已生成")],
+            "step": "image",
+            "images": image_items,
+            "timings": {"image_node": time.time() - start_time}
+        },
+        goto="editor"
+    )
 
 if __name__ == "__main__":
     mock_video_state = VideoState(

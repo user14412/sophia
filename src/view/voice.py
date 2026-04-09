@@ -14,6 +14,7 @@ import time
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langgraph.types import Command
 import ChatTTS
 
 from config import VideoState, llm, VoiceItem, VOICE_OUTPUT_DIR
@@ -251,7 +252,7 @@ def script_to_voice_generation_chat_tts(script: str) -> VoiceItem:
     )
     
 
-def voice_node(state: VideoState) -> VideoState:
+def voice_node(state: VideoState) -> Command:
     start_time = time.time()
 
     """03 配音阶段：根据生成的视频文案，生成配音文件和字幕文件"""
@@ -260,12 +261,15 @@ def voice_node(state: VideoState) -> VideoState:
     
     voice = script_to_voice_generation_chat_tts(script)
     
-    return {
-        "messages": [AIMessage(content=f"配音文件已生成，保存为: {voice['voice_local_path']}")],
-        "step": "voice",
-        "voice": voice,
-        "timings": {"voice_node": time.time() - start_time}
-    }
+    return Command(
+        update={
+            "messages": [AIMessage(content=f"配音文件已生成，保存为: {voice['voice_local_path']}")],
+            "step": "voice",
+            "voice": voice,
+            "timings": {"voice_node": time.time() - start_time}
+        },
+        goto="image"
+    )
 
 # ==========================================
 # 4. 主程序入口 (Main)

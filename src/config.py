@@ -72,7 +72,7 @@ class VideoState(TypedDict):
 
     video_state_config: VideoStateConfig
 
-    feedback : Feedback # 人类 / AI反馈信息
+    feedback : Feedback | None # 人类 / AI反馈信息
 
     core_topic: str # 核心话题：用户指定的关键词
 

@@ -79,5 +79,5 @@ def outline_node(state: VideoState) -> Command:
 
             "draft": generated_outline
         },
-        goto=END
+        goto="writer"
     )

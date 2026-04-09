@@ -4,8 +4,10 @@ import time
 
 from moviepy import ImageClip, TextClip, AudioFileClip, CompositeVideoClip
 from langchain_core.messages import AIMessage
+from langgraph.types import Command
+from langgraph.graph import END
 
-from config import VideoState, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR
+from config import VideoState, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR, VideoStateConfig
 
 # 1. 辅助函数：SRT 时间码转秒数
 def _srt_time_to_seconds(time_str):
@@ -118,22 +120,25 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
         traceback.print_exc()
         return
     
-def editor_node(state: VideoState) -> VideoState:
+def editor_node(state: VideoState) -> Command:
     start_time = time.time()
     print("正在进行视频剪辑合成，请稍候...")
     voice_file_path = state['voice']["voice_local_path"]
     srt_file_path = state['voice']["srt_local_path"]
     image_items = state['images']
-    output_path = str(VIDEO_OUTPUT_DIR / f"{state['title']}.mp4")
+    output_path = str(VIDEO_OUTPUT_DIR / f"{state['proposal']['title']}.mp4")
     generate_video(voice_file_path, srt_file_path, image_items, output_path)
     print(f"✂️ 剪辑阶段完成！耗时：{time.time() - start_time:.2f}秒\n")
-    return{
-        "messages": [AIMessage(content=f"视频已生成，保存为: {output_path}")],
-        "step": "editor",
-        "timings": {"editor_node": time.time() - start_time},
+    return Command(
+        update={
+            "messages": [AIMessage(content=f"视频已生成，保存为: {output_path}")],
+            "step": "editor",
+            "timings": {"editor_node": time.time() - start_time},
 
-        "video_file_path": output_path
-    }
+            "video_file_path": output_path
+        },
+        goto=END
+    )
 
 if __name__ == "__main__":
     # 这里可以放一些测试代码，直接调用 editor_node 来验证功能
@@ -141,45 +146,57 @@ if __name__ == "__main__":
         messages=[],
         step="image",
         timings={},
-        core_topic="测试主题",
-        topic="测试视频主题",
-        video_plan_length=120.0,
-        special_requirements="无",
-        title="测试视频_罗素",
+        
+        video_state_config=VideoStateConfig(
+            max_attempts=3,
+            enable_ai_reflection=False,
+            enable_human_in_the_loop=True
+        ),
 
+        core_topic="测试主题",
+        
+        proposal={
+            "title": "测试视频",
+            "topic": "测试主题",
+            "video_plan_length": 180.0,
+            "special_requirements": "无"
+        },
+        
+        draft=[],
+        
         script="这是一个测试视频的脚本。",
         voice={
-            "voice_local_path": str(VOICE_OUTPUT_DIR / "8b06efd3-bd1c-445a-8d84-3c53c354c2e8.mp3"),
-            "srt_local_path": str(VOICE_OUTPUT_DIR / "8b06efd3-bd1c-445a-8d84-3c53c354c2e8.srt"),
+            "voice_local_path": str(VOICE_OUTPUT_DIR / "8b8cf227-bcb5-417e-bb20-5bd806d75031.mp3"),
+            "srt_local_path": str(VOICE_OUTPUT_DIR / "8b8cf227-bcb5-417e-bb20-5bd806d75031.srt"),
             "voice_length": 184.19
         },
         images=[
             {
         'scene_id': 1,
         'start_time': '00:00:00,000',
-        'end_time': '00:00:21,139',
+        'end_time': '00:01:16,835',
         'prompt': '一个光线略显昏暗的复古理发店内部，门口玻璃上贴着一张泛黄的告示，上面写着关于理发师刮胡子的奇怪规定。一位顾客站在店内，手摸着光滑的下巴，脸上露出困惑的表情。理发师站在一旁，面带微笑，但他自己却留着浓密的胡子。画面采用写实电影感风格，带有柔和的侧光，营造出一种略带诡异和悬疑的氛围。',
         'img_name': 'img_1',
         'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / '理发店.png')
+        'img_local_path': str(IMAGE_OUTPUT_DIR / 'fe8210a4-8e3c-4f53-904c-2fee3c25cd1c.png')
     },
     {
         'scene_id': 2,
-        'start_time': '00:00:21,139',
-        'end_time': '00:01:49,628',
+        'start_time': '00:01:16,835',
+        'end_time': '00:03:22,606',
         'prompt': '画面分裂为两个对称的镜面世界。左侧，理发师手持剃刀，正对着镜子准备给自己刮胡子，但他的动作凝固了，脸上是逻辑冲突的挣扎。右侧，理发师放下剃刀，拒绝给自己刮胡子，但镜中的规则文字如锁链般缠绕着他。背景中浮现出抽象的集合符号和目录书架，象征着悖论的数学本质。整体是超现实的、带有轻微赛博朋克霓虹色调的插画风格，强调逻辑的纠缠与困境。',
         'img_name': 'img_2',
         'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / '自举.png')
+        'img_local_path': str(IMAGE_OUTPUT_DIR / '70354521-f7b9-4443-a2de-a44f2eb31269.png')
     },
     {
         'scene_id': 3,
-        'start_time': '00:01:49,628',
-        'end_time': '00:03:08,217',
+        'start_time': '00:03:22,606',
+        'end_time': '00:07:43,325',
         'prompt': '一个宏大的、由无数齿轮、电路和数学公式构成的抽象结构，象征着数学大厦与逻辑体系。结构的一角出现了理发师悖论引发的裂缝，裂缝中透出光芒。裂缝蔓延，连接至计算机代码流和哥德尔不完备定理的符号。最后，画面定格在一面现代浴室镜前，镜中映出观众自己的模糊倒影，剃须泡沫还挂在脸上。风格是融合了写实细节与概念艺术的电影海报感，色调从危机的灰暗转向思考的深邃蓝色。',
         'img_name': 'img_3',
         'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / '逻辑.png')
+        'img_local_path': str(IMAGE_OUTPUT_DIR / 'c90f1499-8a72-496b-a025-81ec90c9bc58.png')
     }
         ],
         video_file_path=""
