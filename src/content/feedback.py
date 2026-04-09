@@ -33,5 +33,25 @@ def feedback_node(state: VideoState) -> Command:
                 },
                 goto="plan",
             )
+        case "outline":
+            print("\n请审核大纲是否合理：")
+            feedback = Feedback(
+                status="Accepted",
+                content="大纲合理，继续执行后续节点。",
+                attempt=0,
+            )
+            feedback_status = input("请输入您的反馈（如果大纲合理，请输入“y, Y, YES, Yes, yes”，否则输入其他值）：").strip()
+            feedback['status'] = "Accepted" if feedback_status in ["y", "Y", "YES", "Yes", "yes"] else "Rejected"
+            if feedback['status'] == "Rejected":
+                feedback_content = input("请具体说明大纲存在的问题，以便AI进行改进：").strip()
+                feedback['content'] = feedback_content if feedback_content else "大纲被拒绝，但未提供具体反馈内容。"
+            return Command(
+                update={
+                    "messages": [AIMessage(content=f"反馈阶段完成，当前反馈状态：{feedback['status']}，反馈内容：{feedback['content']}")],
+                    "step": "outline_feedback",
+                    "feedback": feedback
+                },
+                goto="outline",
+            )
         case _:
             raise ValueError(f"未知的步骤：{state['step']}，无法执行反馈节点。")
