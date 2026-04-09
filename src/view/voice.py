@@ -1,3 +1,6 @@
+"""
+view.voice - 视频制作助手的配音模块，负责将生成的视频文案转换成配音文件和字幕文件
+"""
 import os
 import re
 import math

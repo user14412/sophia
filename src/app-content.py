@@ -3,18 +3,20 @@ app.py - 视频制作助手应用主入口
 """
 import time
 import asyncio
+import traceback
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import RetryPolicy
 
-from config import llm, VideoState
+from config import llm, VideoState, VideoStateConfig
 from view.image import image_node
 from view.voice import voice_node
 from view.editor import editor_node
 from content.writer import writer_node
 from content.plan import plan_node
+from content.feedback import feedback_node
 
 def create_search_pipeline():
     """创建一个简单的视频制作流程："""
@@ -28,12 +30,10 @@ def create_search_pipeline():
     workflow.add_node("image", image_node)
     workflow.add_node("editor", editor_node)
 
+    workflow.add_node("feedback", feedback_node) # 反馈节点，处理人类 / AI反馈信息
+
     workflow.add_edge(START, "plan")
-    workflow.add_edge("plan", "writer")
-    workflow.add_edge("writer", "voice")
-    workflow.add_edge("voice", "image")
-    workflow.add_edge("image", "editor")
-    workflow.add_edge("editor", END)
+    workflow.add_edge("plan", END)
 
     memory = InMemorySaver() # 内存临时存储检查点
     search_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
@@ -56,11 +56,18 @@ async def app():
 
     session_count = 0
     config = {"configurable": {"thread_id": f"search-session-{session_count}"}}
-    
+
+    video_state_config = VideoStateConfig(
+        max_attempts=3,
+        enable_ai_reflection=False,
+        enable_human_in_the_loop=True
+    )
+
     core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
     initial_state: VideoState = {
         "messages": [],
-        "step": "plan",
+        "step": "init", # 重要
+        "video_state_config": video_state_config,
         "core_topic": core_topic,
         "topic": "休谟的怀疑论哲学观点",
         "video_plan_length": 180.0, # 3分钟
@@ -68,6 +75,7 @@ async def app():
         "title": "【哲学趣史02】休谟的怀疑论：我们真的能认识世界吗？",
         "script": ""
     }
+    initial_state['step'] = "init" # 重要，不能随便改成其他值
 
     # 执行工作流
     try:
@@ -76,6 +84,9 @@ async def app():
         # 实时打印AI输出结果
         async for output in search_pipeline.astream(initial_state, config=config):
             for node_name, node_output in output.items():
+                if node_output is None:
+                    # 空值判断，不然没有update的节点会报错
+                    continue
                 if "messages" in node_output and node_output["messages"]:
                     latest_message = node_output["messages"][-1]
                     if isinstance(latest_message, AIMessage):
@@ -85,14 +96,16 @@ async def app():
                             case "voice": print(f"🎤 配音阶段：{latest_message.content}")
                             case "image": print(f"🖼️ 画面阶段：{latest_message.content}")
                             case "editor": print(f"✂️ 剪辑阶段：{latest_message.content}")
+                            case "feedback": print(f"🔄 反馈阶段：{latest_message.content}")
 
         timings = time.time() - start_time
         print(f"\n🎉 视频制作流程完成！总耗时：{timings:.2f}秒")
         print("\n" + "=" * 60 + "\n")
 
     except Exception as e:
-        print(f"❌ 发生错误：{str(e)}")
-        print("请重新输入您的问题，或检查您的网络连接和API密钥配置。")
-                                
+        print(f"❌ 发生错误：{type(e).__name__}: {str(e)}")
+        # 打印详细的堆栈跟踪，直接告诉你错误在哪一行
+        traceback.print_exc()
+        print("请重新输入您的问题，或检查您的网络连接和API密钥配置。")                      
 if __name__ == "__main__":
     asyncio.run(app())

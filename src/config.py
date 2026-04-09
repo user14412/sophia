@@ -1,4 +1,6 @@
-"""初始化模块"""
+"""
+config.py - 视频制作助手的全局常量配置
+"""
 import os
 import dotenv
 dotenv.load_dotenv() # 从 .env 文件加载环境变量
@@ -11,8 +13,9 @@ from langgraph.graph.message import add_messages
 
 
 """路径处理"""
-RESOURCES_DIR = Path(__file__).parent.parent / "resources" # 获取当前脚本的绝对路径
-VOICE_OUTPUT_DIR = RESOURCES_DIR / "voice" / "output"
+BASE_DIR = Path(__file__).parent.parent # 获取项目根目录的绝对路径
+RESOURCES_DIR = Path(__file__).parent.parent / "resources" # 获取项目资源目录的绝对路径
+VOICE_OUTPUT_DIR = RESOURCES_DIR / "voice" / "output" 
 IMAGE_OUTPUT_DIR = RESOURCES_DIR / "images"
 VIDEO_OUTPUT_DIR = RESOURCES_DIR / "videos" / "output"
 FONT_DIR = RESOURCES_DIR / "fonts"
@@ -25,6 +28,11 @@ llm = ChatOpenAI(
     temperature=0.7,
 )
 
+class VoiceItem(TypedDict):
+    voice_local_path: str # 配音文件路径
+    srt_local_path: str # 字幕文件路径
+    voice_length: float # 视频配音长度(s)
+    
 class imageItem(TypedDict):
     scene_id: int
     start_time: str
@@ -34,10 +42,23 @@ class imageItem(TypedDict):
     img_url: str | None
     img_local_path: str | None
 
-class VoiceItem(TypedDict):
-    voice_local_path: str # 配音文件路径
-    srt_local_path: str # 字幕文件路径
-    voice_length: float # 视频配音长度(s)
+class Proposal(TypedDict):
+    title: str # 视频标题
+    topic: str # 视频主题
+    video_plan_length: float # 视频建议长度(s)
+    special_requirements: str # 特殊要求
+
+class Feedback(TypedDict):
+    status: str # "Accepted" or "Rejected" / or "Terminated"
+    content: str # 人类 / AI 反馈意见
+    attempt: int # 当前尝试次数 attempt < max_apptemps 用于控制AI反馈次数
+    # max_attempts：写在VideoState的config字段里；该字段不需要在状态中更新，该字段还包括是否开启 AI自我反思 / 人类在环 等配置项
+
+class VideoStateConfig(TypedDict):
+    max_attempts: int # AI反馈最大尝试次数
+    enable_ai_reflection: bool # 是否开启 AI自我反思
+    enable_human_in_the_loop: bool # 是否开启 人类在环
+
 
 # 定义全局状态结构
 class VideoState(TypedDict):
@@ -45,18 +66,16 @@ class VideoState(TypedDict):
     step: str # 当前步骤
     timings: Annotated[dict, operator.ior]
 
+    video_state_config: VideoStateConfig
+
+    feedback : Feedback # 人类 / AI反馈信息
+
     core_topic: str # 核心话题：用户指定的关键词
 
-    title: str # 视频标题
-    topic: str # 视频主题
-    video_plan_length: float # 视频建议长度(s)
-    special_requirements: str # 特殊要求
+    proposal : Proposal # 策划阶段输出的策划方案，包括视频标题、主题、建议长度、特殊要求等
     
     script: str # 视频文案
 
-    # voice_file_path: str # 配音文件路径
-    # srt_file_path: str # 字幕文件路径
-    # video_voice_length: float # 视频配音长度(s)
     voice: VoiceItem # 配音信息
 
     images: list[imageItem] # 场景图片信息列表，包含每个场景的prompt、生成的图片URL等
