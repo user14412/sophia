@@ -62,20 +62,19 @@ async def app():
     video_state_config = VideoStateConfig(
         max_attempts=3,
         enable_ai_reflection=False,
-        enable_human_in_the_loop=True
+        enable_human_in_the_loop=True,
+        image_mode="static"
     )
 
     core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
     initial_state: VideoState = {
+        # 非None字段
         "messages": [],
         "step": "init", # 重要
         "video_state_config": video_state_config,
-        "core_topic": core_topic,
-        "topic": "休谟的怀疑论哲学观点",
-        "video_plan_length": 180.0, # 3分钟
-        "special_requirements": "生动有趣，适合大众理解",
-        "title": "【哲学趣史02】休谟的怀疑论：我们真的能认识世界吗？",
-        "script": ""
+
+        # plan阶段需要的输入字段
+        "core_topic": core_topic,   
     }
     initial_state['step'] = "init" # 重要，不能随便改成其他值
 

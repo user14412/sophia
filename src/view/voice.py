@@ -123,24 +123,24 @@ class SoVitsProvider(BaseTTSProvider):
             "B": {
                 # 纳西妲双最大有点过拟合，换成稍微弱一点的版本可能更清澈一些
                 # "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "nahida_voice_e4_s164.pth"),
-                "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "nahida_voice_e8_s328.pth"),
-                # "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "nahida_voice-e5.ckpt"),
-                # "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "nahida_voice-e10.ckpt"),
-                "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "nahida_voice-e15.ckpt"),
+                "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "nahida_voice_e8_s328.pth"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e5.ckpt"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e10.ckpt"),
+                "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e15.ckpt"),
 
                 # 参考音频：从你那 30 个原神语音里挑一句最完美的，填在这里
-                "ref_audio_path": str(RESOURCES_DIR / "voice" / "reference_audio" / "nahida_morning.wav"), 
+                "ref_audio_path": str(RESOURCES_DIR / "voice" / "static" / "reference_audio" / "nahida_morning.wav"), 
                 "prompt_text": "早上好，我们赶快出发吧，这世上有太多的东西都是过时不候的呢。",
                 "prompt_lang": "zh"
             },
             "A": {
-                # "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "haisen_voice_e4_s176.pth"),
-                "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "haisen_voice_e8_s352.pth"),
-                # "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "haisen_voice-e5.ckpt"),
-                # "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "haisen_voice-e10.ckpt"),
-                "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "haisen_voice-e15.ckpt"),
+                # "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "haisen_voice_e4_s176.pth"),
+                "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "haisen_voice_e8_s352.pth"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "haisen_voice-e5.ckpt"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "haisen_voice-e10.ckpt"),
+                "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "haisen_voice-e15.ckpt"),
 
-                "ref_audio_path": str(RESOURCES_DIR / "voice" / "reference_audio" / "haisen_airphone.wav"),
+                "ref_audio_path": str(RESOURCES_DIR / "voice" / "static" / "reference_audio" / "haisen_airphone.wav"),
                 "prompt_text": "要是在街上和我打招呼我却没有反应的话，不要见怪。我只是开了耳机隔音而已。",
                 "prompt_lang": "zh"
             }
@@ -239,89 +239,68 @@ class ScriptParserNode:
 
     @staticmethod
     def parse_llm(raw_script: str) -> list['AudioChunk']:
-        # chunk_prompt = f"""
-        #             你是一位专业的 Bilibili 视频配音导演。你的任务是将长篇视频文案切分为适合配音演员“一口气读完”的短句。
+        import textwrap
+        max_length = 1000
+        raw_scripts = textwrap.wrap(raw_script, max_length, break_long_words=True)
+        result_chunks = []
+        for i, part in enumerate(raw_scripts):
+            chunk_prompt = f"""
+                你是一位专业的视频配音导演。你的任务是清洗文案、识别角色，并将其切分为适合配音的短句。
 
-        #             【原始文案】
-        #             {raw_script}
+                【原始文案】
+                {part}
 
-        #             【你的任务说明】
-        #             1. 语义与情感连贯：切分点应在句号、逗号、问号或自然的转折、停顿处，绝不能把一个完整的成语或专属名词切断。
-        #             2. 【重要!】长度限制：每个短句的字数建议严格控制在 30-50 个字之间。太长会导致配音缺氧掉调，太短会导致声音断断续续。
-        #             3. 标点保留：切分后的文本必须保留原有的末尾标点符号，这对于指导 TTS 的降调或升调极其重要。
-        #             4. 角色识别：准确提取每句话的说话人（如文案中带有“A:”或“B:”）。如果全是旁白，一律输出为 "A"。
-        #             5. 【重要!】长度限制：每个短句的字数建议严格控制在 30-50 个字之间。太长会导致配音缺氧掉调，太短会导致声音断断续续。
-
-        #             【输出格式要求】
-        #             你必须输出一个纯净的 JSON 数组，数组中的每个对象代表一个音频块，结构必须如下（不要输出 markdown 代码块标记，不要多余废话）：
-        #             [
-        #                 {{
-        #                     "speaker": "A",
-        #                     "text": "切分后的短句文本，必须包含原有的标点符号。"
-        #                 }},
-        #                 ...
-        #             ]
-        # """
-        
-        chunk_prompt = f"""
-            你是一位专业的视频配音导演。你的任务是清洗文案、识别角色，并将其切分为适合配音的短句。
-
-            【原始文案】
-            {raw_script}
-
-            【核心任务协议】
-            1. **角色统一规范 (严格执行)**：
-               - **单人模式**：如果文案为单人旁白或只有一个说话者，角色 ID 一律输出为 **"A"**。
-               - **双人模式**：
-                 - 识别文案中的两个角色。为了匹配后端声音，**必须将女性角色映射为 "A"，男性角色映射为 "B"**。
-                 - 如果无法从名字判断性别，则按出现顺序分配：第一个人为 "A"，第二个人为 "B"。
-                 - 无论原名是什么（如“钟离”、“纳西妲”），JSON 里的 speaker 只能是 "A" 或 "B"。
-            
-            2. **文案深度清洗**：
-               - **剔除动作描述**：必须删除所有括号及其内部的内容（如："(钟离颔首)"、"（纳西妲沉思）"），这些内容不需要配音。
-               - **剔除人名标签**：删除行首的角色名和冒号（如：删除 "A:"、"钟离："），只保留纯台词。
-
-            3. **切分与字数控制**：
-               - 每个 `text` 的字数严格控制在 **30-50** 个字之间。
-               - 切分点必须是句号、问号、感叹号或自然的语义转折处。
-               - 将一句末尾的部分句号替换为省略号 ... 或破折号 ——，方便TTS引擎发出轻微尾音。
-               - 如果有些词语之间需要停顿，适当多使用逗号。GPT-SoVITS 遇到逗号时，天然会生成一个小小的停顿和微弱的换气感。
-
-            【输出格式要求】
-            只输出纯净的 JSON 数组，严禁包含 Markdown 代码块标记（```json）或任何碎碎念。
-            格式示例：
-            [
-                {{"speaker": "A", "text": "切分后的短句文本，含标点。"}},
-                {{"speaker": "B", "text": "切分后的短句文本，含标点。"}},
-                ...
-            ]
-        """
-
-        # 也可以删去省略号、逗号、破折号的提示，因为微调好的模型已经会顿挫了。再加会导致句尾有漂移
-
-        """结构化大语言模型输出"""
-        print(f"⏳ 正在调用大模型进行语义级断句切分...")
-        structured_llm = llm.with_structured_output(
-            ChunkOutputModel,
-            method="function_calling"
-        )
-        
-        response_obj = structured_llm.invoke([SystemMessage(content=chunk_prompt)])
-        generated_chunks = response_obj.chunks
-        
-        # 将 Pydantic 模型直接转为流水线需要的 AudioChunk 实例
-        chunks = []
-        for item in generated_chunks:
-            # 过滤掉可能的空白脏数据
-            if item.text.strip():
-                chunks.append(AudioChunk(speaker=item.speaker, text=item.text.strip()))
+                【核心任务协议】
+                1. **角色统一规范 (严格执行)**：
+                - **单人模式**：如果文案为单人旁白或只有一个说话者，角色 ID 一律输出为 **"A"**。
+                - **双人模式**：
+                    - 识别文案中的两个角色。为了匹配后端声音，**必须将女性角色映射为 "A"，男性角色映射为 "B"**。
+                    - 如果无法从名字判断性别，则按出现顺序分配：第一个人为 "A"，第二个人为 "B"。
+                    - 无论原名是什么（如“钟离”、“纳西妲”），JSON 里的 speaker 只能是 "A" 或 "B"。
                 
-        print(f"✅ 解析完成，共切分为 {len(chunks)} 个 Chunk：")
-        for chunk in chunks:
+                2. **文案深度清洗**：
+                - **剔除动作描述**：必须删除所有括号及其内部的内容（如："(钟离颔首)"、"（纳西妲沉思）"），这些内容不需要配音。
+                - **剔除人名标签**：删除行首的角色名和冒号（如：删除 "A:"、"钟离："），只保留纯台词。
+
+                3. **切分与字数控制**：
+                - 每个 `text` 的字数严格控制在 **30-50** 个字之间。
+                - 切分点必须是句号、问号、感叹号或自然的语义转折处。
+                - 将一句末尾的部分句号替换为省略号 ... 或破折号 ——，方便TTS引擎发出轻微尾音。
+                - 如果有些词语之间需要停顿，适当多使用逗号。GPT-SoVITS 遇到逗号时，天然会生成一个小小的停顿和微弱的换气感。
+
+                【输出格式要求】
+                只输出纯净的 JSON 数组，严禁包含 Markdown 代码块标记（```json）或任何碎碎念。
+                格式示例：
+                [
+                    {{"speaker": "A", "text": "切分后的短句文本，含标点。"}},
+                    {{"speaker": "B", "text": "切分后的短句文本，含标点。"}},
+                    ...
+                ]
+            """
+
+            """结构化大语言模型输出"""
+            print(f"⏳ 正在调用大模型进行语义级断句切分...")
+            structured_llm = llm.with_structured_output(
+                ChunkOutputModel,
+                method="function_calling"
+            )
+            
+            response_obj = structured_llm.invoke([SystemMessage(content=chunk_prompt)])
+            generated_chunks = response_obj.chunks
+            
+            # 将 Pydantic 模型直接转为流水线需要的 AudioChunk 实例
+            chunks = []
+            for item in generated_chunks:
+                # 过滤掉可能的空白脏数据
+                if item.text.strip():
+                    chunks.append(AudioChunk(speaker=item.speaker, text=item.text.strip()))
+            result_chunks.extend(chunks)
+        print(f"✅ 解析完成，共切分为 {len(result_chunks)} 个 Chunk：")
+        for chunk in result_chunks:
             print(f"  - [{chunk.speaker}] {chunk.text}")
             
-        return chunks
-    
+        return result_chunks
+
 class AudioGenerationNode:
     """节点 2：负责生成音频，并计算全局时间轴"""
     def __init__(self, tts_provider: BaseTTSProvider):

@@ -10,7 +10,7 @@ import os
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langgraph.types import Command
 
-from config import VideoState,llm, imageItem, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR
+from config import VideoState, VideoStateConfig,llm, imageItem, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR
 
 
 def _srt_time_to_seconds(time_str: str) -> float:
@@ -30,6 +30,15 @@ def _get_scene_count_from_srt(srt_path: str) -> int:
     total_duration_seconds = _srt_time_to_seconds(time_matches[-1])
     return max(1, int(total_duration_seconds // 120))
 
+def _get_srt_end_time(srt_path: str) -> str:
+    with open(srt_path, "r", encoding="utf-8") as f:
+        srt_content = f.read()
+
+    time_matches = re.findall(r"\d{2}:\d{2}:\d{2}[,.]\d{3}", srt_content)
+    if not time_matches:
+        return "00:00:00,000"
+
+    return time_matches[-1]
 
 def scene_split(srt_path: str) -> list[imageItem]:
     """场景切分：根据srt字幕，生成对应的List[{场景 + 时间轴 + prompt}]"""
@@ -80,7 +89,7 @@ def scene_split(srt_path: str) -> list[imageItem]:
     
     return image_items
 
-def text_to_image_generation_qwen_v1(image_item: imageItem) -> imageItem:
+def text_to_image_generation_qwen(image_item: imageItem) -> imageItem:
     """
     文生图调用接口
     input: 一个未生图的一个图片对象
@@ -167,21 +176,22 @@ def text_to_image_generation_qwen_v1(image_item: imageItem) -> imageItem:
 
     return image_item
 
-def image_node(state: VideoState) -> Command:
+def generate_image_impl_qwen(state: VideoState) -> Command:
     start_time = time.time()
-
+    print("进入AI文生图，请稍候...")
     image_items = scene_split(state['voice']["srt_local_path"])
 
     for idx, image_item in enumerate(image_items):
         print(f"\n正在为场景 {image_item['scene_id']} 生成图片...")
-        image_item = text_to_image_generation_qwen_v1(image_item)
+        image_item = text_to_image_generation_qwen(image_item)
         image_items[idx] = image_item
 
-    print(f"\n🎨 场景图片生成完成！耗时：{time.time() - start_time:.2f}秒\n")
-
+    state['images'] = image_items
+    
+    print(f"\n🎨 场景配图已完成！耗时：{time.time() - start_time:.2f}秒\n")
     return Command(
         update={
-            "messages": [AIMessage(content="场景图片已生成")],
+            "messages": [AIMessage(content="场景配图已完成")],
             "step": "image",
             "images": image_items,
             "timings": {"image_node": time.time() - start_time}
@@ -189,64 +199,98 @@ def image_node(state: VideoState) -> Command:
         goto="editor"
     )
 
+def generate_image_impl_static(state: VideoState) -> Command:
+    start_time = time.time()
+    print("进入静态配图模式，直接使用预设图片...")
+    from config import RESOURCES_DIR
+    static_img_local_path = str(RESOURCES_DIR / "images" / "static" / "srnf.jpg") # HARDCODE
+    images = []
+    image_item = imageItem(
+        scene_id=1,
+        start_time='00:00:00,000',
+        end_time=_get_srt_end_time(state['voice']["srt_local_path"]),
+        img_local_path=static_img_local_path,
+    )
+    images.append(image_item)
+    print(f"\n🎨 场景配图已完成！耗时：{time.time() - start_time:.2f}秒\n")
+    print(f"使用的静态配图对象是：{image_item}")
+    return Command(
+        update={
+            "messages": [AIMessage(content="场景配图已完成")],
+            "step": "image",
+            "images": images,
+            "timings": {"image_node": time.time() - start_time}
+        },
+        goto="editor"
+    )
+
+IMG_IMPL_MAP = {
+    "generate": generate_image_impl_qwen,
+    "static": generate_image_impl_static
+}
+
+def image_node(state: VideoState) -> Command:
+    image_mode = state['video_state_config']['image_mode']
+    impl = IMG_IMPL_MAP[image_mode]
+    return impl(state)
+
 if __name__ == "__main__":
     mock_video_state = VideoState(
         messages=[],
         step="image",
         timings={},
+
+        video_state_config=VideoStateConfig(
+            enable_human_in_the_loop=True,
+            image_mode="static"
+        ),
+
+        feedback=None,
+
         core_topic="测试主题",
-        topic="测试视频主题",
-        video_plan_length=120.0,
-        special_requirements="无",
-        title="测试视频_罗素",
+        
+        proposal=None,
+
+        draft=None,
 
         script="这是一个测试视频的脚本。",
+
         voice={
             "voice_local_path": str(VOICE_OUTPUT_DIR / "8b06efd3-bd1c-445a-8d84-3c53c354c2e8.mp3"),
             "srt_local_path": str(VOICE_OUTPUT_DIR / "8b06efd3-bd1c-445a-8d84-3c53c354c2e8.srt"),
             "voice_length": 184.19
         },
+
         images=[
             {
-        'scene_id': 1,
-        'start_time': '00:00:00,000',
-        'end_time': '00:00:21,139',
-        'prompt': '一个光线略显昏暗的复古理发店内部，门口玻璃上贴着一张泛黄的告示，上面写着关于理发师刮胡子的奇怪规定。一位顾客站在店内，手摸着光滑的下巴，脸上露出困惑的表情。理发师站在一旁，面带微笑，但他自己却留着浓密的胡子。画面采用写实电影感风格，带有柔和的侧光，营造出一种略带诡异和悬疑的氛围。',
-        'img_name': 'img_1',
-        'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_1.png')
-    },
-    {
-        'scene_id': 2,
-        'start_time': '00:00:21,139',
-        'end_time': '00:01:49,628',
-        'prompt': '画面分裂为两个对称的镜面世界。左侧，理发师手持剃刀，正对着镜子准备给自己刮胡子，但他的动作凝固了，脸上是逻辑冲突的挣扎。右侧，理发师放下剃刀，拒绝给自己刮胡子，但镜中的规则文字如锁链般缠绕着他。背景中浮现出抽象的集合符号和目录书架，象征着悖论的数学本质。整体是超现实的、带有轻微赛博朋克霓虹色调的插画风格，强调逻辑的纠缠与困境。',
-        'img_name': 'img_2',
-        'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_2.png')
-    },
-    {
-        'scene_id': 3,
-        'start_time': '00:01:49,628',
-        'end_time': '00:03:08,217',
-        'prompt': '一个宏大的、由无数齿轮、电路和数学公式构成的抽象结构，象征着数学大厦与逻辑体系。结构的一角出现了理发师悖论引发的裂缝，裂缝中透出光芒。裂缝蔓延，连接至计算机代码流和哥德尔不完备定理的符号。最后，画面定格在一面现代浴室镜前，镜中映出观众自己的模糊倒影，剃须泡沫还挂在脸上。风格是融合了写实细节与概念艺术的电影海报感，色调从危机的灰暗转向思考的深邃蓝色。',
-        'img_name': 'img_3',
-        'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_3.png')
-    }
+                'scene_id': 1,
+                'start_time': '00:00:00,000',
+                'end_time': '00:00:21,139',
+                'prompt': '一个光线略显昏暗的复古理发店内部，门口玻璃上贴着一张泛黄的告示，上面写着关于理发师刮胡子的奇怪规定。一位顾客站在店内，手摸着光滑的下巴，脸上露出困惑的表情。理发师站在一旁，面带微笑，但他自己却留着浓密的胡子。画面采用写实电影感风格，带有柔和的侧光，营造出一种略带诡异和悬疑的氛围。',
+                'img_name': 'img_1',
+                'img_url': None,
+                'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_1.png')
+            },
+            {
+                'scene_id': 2,
+                'start_time': '00:00:21,139',
+                'end_time': '00:01:49,628',
+                'prompt': '画面分裂为两个对称的镜面世界。左侧，理发师手持剃刀，正对着镜子准备给自己刮胡子，但他的动作凝固了，脸上是逻辑冲突的挣扎。右侧，理发师放下剃刀，拒绝给自己刮胡子，但镜中的规则文字如锁链般缠绕着他。背景中浮现出抽象的集合符号和目录书架，象征着悖论的数学本质。整体是超现实的、带有轻微赛博朋克霓虹色调的插画风格，强调逻辑的纠缠与困境。',
+                'img_name': 'img_2',
+                'img_url': None,
+                'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_2.png')
+            },
+            {
+                'scene_id': 3,
+                'start_time': '00:01:49,628',
+                'end_time': '00:03:08,217',
+                'prompt': '一个宏大的、由无数齿轮、电路和数学公式构成的抽象结构，象征着数学大厦与逻辑体系。结构的一角出现了理发师悖论引发的裂缝，裂缝中透出光芒。裂缝蔓延，连接至计算机代码流和哥德尔不完备定理的符号。最后，画面定格在一面现代浴室镜前，镜中映出观众自己的模糊倒影，剃须泡沫还挂在脸上。风格是融合了写实细节与概念艺术的电影海报感，色调从危机的灰暗转向思考的深邃蓝色。',
+                'img_name': 'img_3',
+                'img_url': None,
+                'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_3.png')
+            }
         ],
-        video_file_path=""
+        video_file_path=None,
     )
-    # print("=== 测试 image_node ===")
-    # image_node(mock_video_state)
-    print("=== 测试 文生图接口 ===")
-    # test_image_items = mock_video_state["images"]
-    # for idx, image_item in enumerate(test_image_items):
-    #     print(f"\n正在为场景 {image_item['scene_id']} 生成图片...")
-    #     image_item = text_to_image_generation_qwen_v1(image_item)
-    #     test_image_items[idx] = image_item
-    
-    # rprint("生成的图片信息列表:")
-    # for item in test_image_items:
-    #     rprint(f"  - {item['img_local_path']}.png: {item['img_url']}")
-    text_to_image_generation_qwen_v1(mock_video_state["images"][2])
+    print("=== 测试 image_node ===")
+    image_node(mock_video_state)

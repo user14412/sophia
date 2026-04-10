@@ -82,6 +82,7 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
                             stroke_color='black', # 黑色描边，防止背景太亮看不清
                             stroke_width=2, # 描边宽度 (Must be int)
                             method='caption',     # 允许自动换行
+                            align='center',      # 文本居中对齐
                             size=(int(VIDEO_SIZE[0]*0.8), None) # 限制字幕宽度为屏幕的80%
                         )
                         .with_position(('center', y_position)) # 底部居中，向上偏移100像素
