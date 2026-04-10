@@ -2,6 +2,9 @@
 view.voice - 视频制作助手的配音模块，负责将生成的视频文案转换成配音文件和字幕文件
 """
 import os
+from dotenv import load_dotenv
+load_dotenv()
+from pathlib import Path
 import re
 import math
 import numpy as np
@@ -110,25 +113,32 @@ class ChatTTSProvider(BaseTTSProvider):
 
 class SoVitsProvider(BaseTTSProvider):
     """接入本地部署的 GPT-SoVITS API"""
-    def __init__(self, api_url="http://127.0.0.1:9880/tts"):
+    def __init__(self, api_url=os.getenv("GPT_SOVITS_API_URL")):
         print("正在连接 GPT-SoVITS 本地 API...")
         self.api_url = api_url
         
         # 定义说话人配置 (替换为你真实的本地参考音频路径和对应的参考文本)
         # 这里特别适合你为哲学频道的不同“嘉宾”设定固定的参考音色
         self.speakers = {
-            "A": {
-                "sovits_path": r"C:\UserData\models\GPT-SoVITS-v2pro-20250604-nvidia50\SoVITS_weights_v2Pro\nahida_voice_e8_s328.pth",
-                "gpt_path": r"C:\UserData\models\GPT-SoVITS-v2pro-20250604-nvidia50\GPT_weights_v2Pro\nahida_voice-e15.ckpt",
+            "B": {
+                # 纳西妲双最大有点过拟合，换成稍微弱一点的版本可能更清澈一些
+                # "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "nahida_voice_e4_s164.pth"),
+                "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "nahida_voice_e8_s328.pth"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "nahida_voice-e5.ckpt"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "nahida_voice-e10.ckpt"),
+                "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "nahida_voice-e15.ckpt"),
 
                 # 参考音频：从你那 30 个原神语音里挑一句最完美的，填在这里
                 "ref_audio_path": str(RESOURCES_DIR / "voice" / "reference_audio" / "nahida_morning.wav"), 
                 "prompt_text": "早上好，我们赶快出发吧，这世上有太多的东西都是过时不候的呢。",
                 "prompt_lang": "zh"
             },
-            "B": {
-                "sovits_path": r"C:\UserData\models\GPT-SoVITS-v2pro-20250604-nvidia50\SoVITS_weights_v2Pro\haisen_voice_e8_s352.pth",
-                "gpt_path": r"C:\UserData\models\GPT-SoVITS-v2pro-20250604-nvidia50\GPT_weights_v2Pro\haisen_voice-e15.ckpt",
+            "A": {
+                # "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "haisen_voice_e4_s176.pth"),
+                "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "haisen_voice_e8_s352.pth"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "haisen_voice-e5.ckpt"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "haisen_voice-e10.ckpt"),
+                "gpt_path": str(RESOURCES_DIR / "voice" / "weights" / "gpt_weights" / "haisen_voice-e15.ckpt"),
 
                 "ref_audio_path": str(RESOURCES_DIR / "voice" / "reference_audio" / "haisen_airphone.wav"),
                 "prompt_text": "要是在街上和我打招呼我却没有反应的话，不要见怪。我只是开了耳机隔音而已。",
@@ -286,6 +296,8 @@ class ScriptParserNode:
                 ...
             ]
         """
+
+        # 也可以删去省略号、逗号、破折号的提示，因为微调好的模型已经会顿挫了。再加会导致句尾有漂移
 
         """结构化大语言模型输出"""
         print(f"⏳ 正在调用大模型进行语义级断句切分...")
@@ -477,13 +489,13 @@ if __name__ == "__main__":
     # 模拟你编写的纯文本脚本
     
     # 对谈式
-    raw_script = """
-    A: 欢迎来到我们的频道。这是我们使用自动化管线生成的第一段音频！
-    B: 没错，哪怕是长文本，我们也可以通过程序把它切分成一小块一小块的，然后再拼接起来。
-    A: 而且你看，现在的字幕和声音是完全对齐的，因为时间轴是我们通过数组长度精确算出来的。
-    B： 这就是我们这个流水线的核心优势：自动化、可控、且质量稳定！
-    A： 未来我们还可以接入更多的 TTS 引擎，甚至是不同语言的模型，让它变得更加强大和多样化。
-    """
+    # raw_script = """
+    # A: 欢迎来到我们的频道。这是我们使用自动化管线生成的第一段音频！
+    # B: 没错，哪怕是长文本，我们也可以通过程序把它切分成一小块一小块的，然后再拼接起来。
+    # A: 而且你看，现在的字幕和声音是完全对齐的，因为时间轴是我们通过数组长度精确算出来的。
+    # B： 这就是我们这个流水线的核心优势：自动化、可控、且质量稳定！
+    # A： 未来我们还可以接入更多的 TTS 引擎，甚至是不同语言的模型，让它变得更加强大和多样化。
+    # """
 
     # 混合式
     # raw_script = """
@@ -503,9 +515,9 @@ if __name__ == "__main__":
     # """
 
     # 单人式
-    #     raw_script = """
-    # 唯理论的主要哲学家有三位，即笛卡儿、斯宾诺莎和莱布尼茨，其间我还要穿插讲到伽桑狄和马勒伯朗士这两位哲学家。唯理论的创始人是笛卡儿，他是17世纪欧洲著名的哲学家、数学家和科学家。笛卡儿比培根的时代稍晚，基本上与霍布斯是同时代的人。笛卡儿出生在一个法国贵族家庭，从小受到比较好的教育，在一所教会学校里接受了中世纪的经院哲学，当然也学了一些数学和自然科学方面的知识。但是他却对这种教育深感不满，他后来在《形而上学的沉思》以及《方法谈》中回忆起早年所受的教育时，认为当时学到的那些东西，如哲学、形而上学、逻辑学和其他知识，除了数学之外都是一些毫无用处的东西。从学校毕业后，笛卡儿决定走向现实社会，去阅读“世界这本大书”。于是他游历了欧洲，而且还参与了在德国境内发生的新教徒与天主教徒之间的三十年战争。在1619年到1620年的那个冬天，他所在的军队驻扎在德国的巴伐利亚，由于没有战事，他就在巴伐利亚的一个旧式住宅里进行哲学的思考。他后来回忆说，整个冬天他都钻在那个旧宅子的壁炉边进行形而上学的沉思，乃至于在第二年幵春他从这个老宅子的壁炉边    
-    # """
+    raw_script = """
+    唯理论的主要哲学家有三位，即笛卡儿、斯宾诺莎和莱布尼茨，其间我还要穿插讲到伽桑狄和马勒伯朗士这两位哲学家。唯理论的创始人是笛卡儿，他是17世纪欧洲著名的哲学家、数学家和科学家。笛卡儿比培根的时代稍晚，基本上与霍布斯是同时代的人。笛卡儿出生在一个法国贵族家庭，从小受到比较好的教育，在一所教会学校里接受了中世纪的经院哲学，当然也学了一些数学和自然科学方面的知识。但是他却对这种教育深感不满，他后来在《形而上学的沉思》以及《方法谈》中回忆起早年所受的教育时，认为当时学到的那些东西，如哲学、形而上学、逻辑学和其他知识，除了数学之外都是一些毫无用处的东西。从学校毕业后，笛卡儿决定走向现实社会，去阅读“世界这本大书”。于是他游历了欧洲，而且还参与了在德国境内发生的新教徒与天主教徒之间的三十年战争。在1619年到1620年的那个冬天，他所在的军队驻扎在德国的巴伐利亚，由于没有战事，他就在巴伐利亚的一个旧式住宅里进行哲学的思考。他后来回忆说，整个冬天他都钻在那个旧宅子的壁炉边进行形而上学的沉思，乃至于在第二年幵春他从这个老宅子的壁炉边    
+    """
 
     # 剧本式
 #     raw_script = """

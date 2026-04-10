@@ -16,7 +16,7 @@ from langgraph.graph.message import add_messages
 BASE_DIR = Path(__file__).parent.parent # 获取项目根目录的绝对路径
 RESOURCES_DIR = Path(__file__).parent.parent / "resources" # 获取项目资源目录的绝对路径
 VOICE_OUTPUT_DIR = RESOURCES_DIR / "voice" / "output" 
-IMAGE_OUTPUT_DIR = RESOURCES_DIR / "images"
+IMAGE_OUTPUT_DIR = RESOURCES_DIR / "images" / "output"
 VIDEO_OUTPUT_DIR = RESOURCES_DIR / "videos" / "output"
 FONT_DIR = RESOURCES_DIR / "fonts"
 
