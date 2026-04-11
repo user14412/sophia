@@ -120,7 +120,7 @@ class SoVitsProvider(BaseTTSProvider):
         # 定义说话人配置 (替换为你真实的本地参考音频路径和对应的参考文本)
         # 这里特别适合你为哲学频道的不同“嘉宾”设定固定的参考音色
         self.speakers = {
-            "B": {
+            "A": {
                 # 纳西妲双最大有点过拟合，换成稍微弱一点的版本可能更清澈一些
                 # "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "nahida_voice_e4_s164.pth"),
                 "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "nahida_voice_e8_s328.pth"),
@@ -133,7 +133,7 @@ class SoVitsProvider(BaseTTSProvider):
                 "prompt_text": "早上好，我们赶快出发吧，这世上有太多的东西都是过时不候的呢。",
                 "prompt_lang": "zh"
             },
-            "A": {
+            "B": {
                 # "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "haisen_voice_e4_s176.pth"),
                 "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "haisen_voice_e8_s352.pth"),
                 # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "haisen_voice-e5.ckpt"),

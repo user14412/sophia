@@ -10,6 +10,9 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph.message import add_messages
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
 
 
 """路径处理"""
@@ -36,6 +39,9 @@ class VideoStateConfig(TypedDict):
 
     # 配图
     image_mode: Literal["generate", "static"] # 场景配图模式，"generate"表示使用AI生成，"static"表示使用固定图片
+
+    # RAG
+    enable_tmp_rag: bool # 是否开启临时RAG查询节点
 
 class VoiceItem(TypedDict):
     voice_local_path: str # 配音文件路径
@@ -66,11 +72,15 @@ class Feedback(TypedDict):
     attempt: int # 当前尝试次数 attempt < max_apptemps 用于控制AI反馈次数
     # max_attempts：写在VideoState的config字段里；该字段不需要在状态中更新，该字段还包括是否开启 AI自我反思 / 人类在环 等配置项
 
-
 class DraftItem(TypedDict):
     section_id: int | None
     section_description: str | None
     section_script: str | None
+
+class RAGComponents(TypedDict):
+    text_splitter: RecursiveCharacterTextSplitter | None
+    embeddings: HuggingFaceEmbeddings | None
+    vectorstore: Chroma | None
 
 # 定义全局状态结构
 class VideoState(TypedDict):
@@ -89,6 +99,11 @@ class VideoState(TypedDict):
     # outline只填充大纲内容，不填充草稿item的文案细节
     # writer阶段填充文案细节
     draft: list[DraftItem] | None
+
+    current_draft_id: DraftItem | None # 当前正在写作的草稿项id
+
+    rag_components: RAGComponents | None # RAG组件实例，包含文本切割器、embedding模型、向量数据库等
+    rag_query_results: list[str] | None # RAG查询结果列表，包含每条查询结果的文本内容等信息
 
     # polish阶段输出最终文案，填充到script字段中
     script: str | None # 视频文案

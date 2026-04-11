@@ -70,9 +70,12 @@ def outline_node(state: VideoState) -> Command:
                             "messages": [AIMessage(content=f"大纲阶段完成，本期视频大纲为：{state['draft']}")],
                             "step": "outline",
                             "timings": {"plan_node": time.time() - start_time},
-                            "draft": state['draft']
+
+                            "draft": state['draft'],
+                            "current_draft_id": 0,
+                            "script": ""
                         },
-                        goto="writer"
+                        goto="query_rag"
                     )
             else:
                 feedback_content = state['feedback']['content']
@@ -101,6 +104,7 @@ def outline_node(state: VideoState) -> Command:
                     2. **时长规划**：每段都要在 section_description 中写明建议时长和建议字数，且总时长严格等于 {state['proposal']['video_plan_length']} 秒（按 1 秒约 4 字估算）。
                     3. **写作指令**：section_description 必须给出可执行、具体的写作指令，包括段落目标、必须覆盖的知识点/比喻/情绪设计。
                     4. **硬性约束**：section_script 必须保持为空字符串，不要输出具体台词文案。
+                    5. **拆分原则**：每段探讨的主题应该有所不同，因为后续会通过RAG查询为每段的写作提供参考资料。如果每段的section_description过于相似，可能导致RAG查询出的资料高度重叠，无法形成内容差异化，影响视频整体质量。
 
                     ### 输出格式限制（极为重要）
                     你必须且只能输出一个标准 JSON 对象，结构如下，不要输出 Markdown 代码块，不要附加任何解释文字：
@@ -143,9 +147,11 @@ def outline_node(state: VideoState) -> Command:
                 "step": "outline",
                 "timings": {"outline_node": time.time() - start_time},
 
-                "draft": generated_outline
+                "draft": generated_outline,
+                "current_draft_id": 0,
+                "script": ""
             },
-            goto="writer"
+            goto="query_rag"
         )
     elif state["video_state_config"]["enable_human_in_the_loop"] == True:
         print("进入反馈节点")
@@ -155,7 +161,9 @@ def outline_node(state: VideoState) -> Command:
                 "step": "outline",
                 "timings": {"outline_node": time.time() - start_time},
 
-                "draft": generated_outline
+                "draft": generated_outline,
+                "current_draft_id": 0,
+                "script": ""
             },
             goto="feedback"
         )

@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import RetryPolicy
 
 from config import llm, VideoState, VideoStateConfig
+from content.init import init_node
 from view.image import image_node
 from view.voice import voice_node
 from view.editor import editor_node
@@ -18,6 +19,9 @@ from content.writer import writer_node
 from content.plan import plan_node
 from content.outline import outline_node
 from content.feedback import feedback_node
+from content.query_rag import query_rag_node
+from content.add_rag import add_rag_node
+from content.init_rag import init_rag_node
 
 def create_search_pipeline():
     """创建一个简单的视频制作流程："""
@@ -25,6 +29,8 @@ def create_search_pipeline():
 
     # 建立状态图的节点和边
     # 节点是Python函数，输入State，输出Partial State(只输出需要更新 / 聚合的字段即可)
+    workflow.add_node("init", init_node) # 路由
+    
     workflow.add_node("plan", plan_node)
     workflow.add_node("outline", outline_node)
     workflow.add_node("writer", writer_node)
@@ -32,10 +38,14 @@ def create_search_pipeline():
     workflow.add_node("image", image_node)
     workflow.add_node("editor", editor_node)
 
+    workflow.add_node("add_rag", add_rag_node)
+    workflow.add_node("query_rag", query_rag_node)
+    workflow.add_node("init_rag", init_rag_node)
+
     workflow.add_node("feedback", feedback_node) # 反馈节点，处理人类 / AI反馈信息
 
     # 删掉所有静态边，统一用Command
-    workflow.add_edge(START, "plan")
+    workflow.add_edge(START, "init")
 
     memory = InMemorySaver() # 内存临时存储检查点
     search_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
@@ -63,7 +73,10 @@ async def app():
         max_attempts=3,
         enable_ai_reflection=False,
         enable_human_in_the_loop=True,
-        image_mode="static"
+        
+        image_mode="static", # 画面配图模式，"generate"表示使用AI生成，"static"表示使用固定图片
+
+        enable_tmp_rag=True
     )
 
     core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
