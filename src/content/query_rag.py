@@ -17,7 +17,8 @@ from langchain_core.documents import Document
 import pydantic
 from pydantic import BaseModel, Field
 
-from config import llm, VideoState, RAGComponents, DraftItem
+from config import llm, VideoState, DraftItem
+from services.rag_service import RAGComponents, get_rag_components
 
 def _query_rag(rag_components: RAGComponents, query: str, top_k: int = 3) -> list[Document]:
     """根据query检索 1 次RAG数据库，返回相关度最高的 top_k 条结果，和每条结果的相关度分数"""
@@ -130,7 +131,7 @@ def query_rag_node(state: VideoState) -> Command:
     print(f"⏳ RAG查询中，请稍候...")
 
     """获取RAG组件"""
-    rag_components = state.get("rag_components", None)
+    rag_components = get_rag_components()
 
     current_draft_id = state["current_draft_id"]
     current_description = state['draft'][current_draft_id]['section_description']
@@ -165,10 +166,8 @@ def query_rag_node(state: VideoState) -> Command:
     )
 
 if __name__ == "__main__":
-    from content.init_rag import _init_rag
-    
     """获取RAG组件"""
-    rag_components = _init_rag()
+    rag_components = get_rag_components()
 
     current_description = "你给我写一个笛卡儿的生平简介"
 

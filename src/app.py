@@ -21,7 +21,6 @@ from content.outline import outline_node
 from content.feedback import feedback_node
 from content.query_rag import query_rag_node
 from content.add_rag import add_rag_node
-from content.init_rag import init_rag_node
 
 def create_search_pipeline():
     """创建一个简单的视频制作流程："""
@@ -40,7 +39,6 @@ def create_search_pipeline():
 
     workflow.add_node("add_rag", add_rag_node)
     workflow.add_node("query_rag", query_rag_node)
-    workflow.add_node("init_rag", init_rag_node)
 
     workflow.add_node("feedback", feedback_node) # 反馈节点，处理人类 / AI反馈信息
 
@@ -72,7 +70,7 @@ async def app():
     video_state_config = VideoStateConfig(
         max_attempts=3,
         enable_ai_reflection=False,
-        enable_human_in_the_loop=True,
+        enable_human_in_the_loop=False,
         
         image_mode="static", # 画面配图模式，"generate"表示使用AI生成，"static"表示使用固定图片
 

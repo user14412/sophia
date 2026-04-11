@@ -77,11 +77,6 @@ class DraftItem(TypedDict):
     section_description: str | None
     section_script: str | None
 
-class RAGComponents(TypedDict):
-    text_splitter: RecursiveCharacterTextSplitter | None
-    embeddings: HuggingFaceEmbeddings | None
-    vectorstore: Chroma | None
-
 # 定义全局状态结构
 class VideoState(TypedDict):
     messages: Annotated[list, add_messages] # 消息记录
@@ -102,7 +97,6 @@ class VideoState(TypedDict):
 
     current_draft_id: DraftItem | None # 当前正在写作的草稿项id
 
-    rag_components: RAGComponents | None # RAG组件实例，包含文本切割器、embedding模型、向量数据库等
     rag_query_results: list[str] | None # RAG查询结果列表，包含每条查询结果的文本内容等信息
 
     # polish阶段输出最终文案，填充到script字段中

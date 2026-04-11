@@ -23,3 +23,7 @@ src/asset/*
 !src/asset/.gitkeep
 models/*
 !models/.gitkeep
+
+# 数据库文件
+src/chromadb/*
+!src/chromadb/.gitkeep

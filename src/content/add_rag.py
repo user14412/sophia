@@ -19,7 +19,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-from config import llm, VideoState, RESOURCES_DIR, RAGComponents
+from config import llm, VideoState, RESOURCES_DIR
+from services.rag_service import RAGComponents, get_rag_components
 
 def _calculate_chunk_id(chunk: Document) -> str:
     """计算chunk的哈希值，作为唯一id"""
@@ -58,7 +59,7 @@ def add_rag_node(state: VideoState) -> Command:
     print(f"⏳ 正在临时知识库中添加文档...")
 
     """获取RAG组件"""
-    rag_components = state.get("rag_components", None)
+    rag_components = get_rag_components()
 
     """存储"""
     doc_local_path = str(RESOURCES_DIR / "documents" / "static" / "zhaolin_xifangzhexueshijiangyanlu.txt")
@@ -77,8 +78,7 @@ def add_rag_node(state: VideoState) -> Command:
 
 
 if __name__ == "__main__":
-    from content.init_rag import _init_rag
-    rag_components = _init_rag()
+    rag_components = get_rag_components()
 
     """存储"""
     doc_local_path = str(RESOURCES_DIR / "documents" / "static" / "zhaolin_xifangzhexueshijiangyanlu.txt")
