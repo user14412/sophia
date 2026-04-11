@@ -18,8 +18,8 @@ def _init_rag_components() -> RAGComponents:
     print("触发 RAG 组件懒加载...")
     print("正在初始化文本切割器...")
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=300,
-        chunk_overlap=50
+        chunk_size=800, # chunk_size过小会导致语义破碎
+        chunk_overlap=100
     )
 
     print("正在初始化embedding模型...（初次运行需下载模型，可能较慢）")
