@@ -20,10 +20,32 @@ from pydantic import BaseModel, Field
 from config import llm, VideoState, DraftItem
 from services.rag_service import RAGComponents, get_rag_components
 
+def _raw_text_rag(raw_text: str) -> list[Document]:
+    # """获取RAG组件"""
+    rag_components = get_rag_components()
+    
+    current_description = raw_text
+
+    # """构造RAG查询"""
+    constructed_rag_querys = _construct_rag_query(current_description)
+
+    # """执行RAG查询"""
+    rag_query_results = []
+    for idx, constructed_rag_query in enumerate(constructed_rag_querys):
+        # print(f"\n正在执行第 {idx+1} 条RAG查询...")
+        rag_query_results.extend(_query_rag(rag_components, constructed_rag_query, top_k=5))
+    
+    # """去重，排序，top-k"""
+    top_k_results = _process_query_results(rag_query_results, top_k=7) # 处理的top_k比查询的top_k大一些，是为了防止HyDE相关度过大，屏蔽原始查询和MQE查询的结果
+    rag_query_results = [doc.page_content for doc, score in top_k_results]
+
+    return rag_query_results
+
+
 def _query_rag(rag_components: RAGComponents, query: str, top_k: int = 3) -> list[Document]:
     """根据query检索 1 次RAG数据库，返回相关度最高的 top_k 条结果，和每条结果的相关度分数"""
-    print("正在检索相关内容...")
-    print(f"\nquery如下：{query}")
+    # print("正在检索相关内容...")
+    # print(f"\nquery如下：{query}")
     
     # 之前设定的是预先距离，自动归一化到0-1之间
     structured_retriever_docs = rag_components['vectorstore'].similarity_search_with_relevance_scores(
@@ -31,9 +53,9 @@ def _query_rag(rag_components: RAGComponents, query: str, top_k: int = 3) -> lis
         k=top_k
     )
 
-    for idx, (doc, relevance_score) in enumerate(structured_retriever_docs):
-        print(f"\n检索到的相关内容 {idx+1}：\n")
-        print(f"得分：{relevance_score:.4f}|内容：{doc.page_content[:50]}...\n")
+    # for idx, (doc, relevance_score) in enumerate(structured_retriever_docs):
+    #     print(f"\n检索到的相关内容 {idx+1}：\n")
+    #     print(f"得分：{relevance_score:.4f}|内容：{doc.page_content[:50]}...\n")
 
     return structured_retriever_docs
 
@@ -107,7 +129,7 @@ def _process_query_results(rag_query_results, top_k: int = 3) -> list[tuple[Docu
 
     """打印出最终结果的 内容 相关度 重要度 等所有字段"""
     rprint(f"\n最终用于写作阶段的RAG查询结果（共 {len(top_k_results)} 条）：")
-    rprint(top_k_results)
+    # rprint(top_k_results)
 
     return top_k_results
 
@@ -152,7 +174,7 @@ def query_rag_node(state: VideoState) -> Command:
 
     print(f"🧠 RAG查询完成！耗时：{time.time() - start_time:.2f}秒\n")
     rprint(f"📋 查询到的内容如下：")
-    rprint(top_k_results)
+    # rprint(top_k_results)
 
     return Command(
         update={
