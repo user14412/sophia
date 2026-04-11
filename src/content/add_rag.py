@@ -1,11 +1,13 @@
 """
 add_rag.py - 新增RAG查询节点
 ! 此节点不改变step字段，一则这是一个可选节点，二则plan的feedback目前需要init字段判断入边类型
+用哈希值作为id，让数据库自动判断chunk是否已经添加过，避免重复添加
 """
 import json
 import time
 from typing import TypedDict
 from rich import print as rprint
+import hashlib
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langgraph.types import Command
@@ -19,6 +21,12 @@ from langchain_core.documents import Document
 
 from config import llm, VideoState, RESOURCES_DIR, RAGComponents
 
+def _calculate_chunk_id(chunk: Document) -> str:
+    """计算chunk的哈希值，作为唯一id"""
+    chunk_content = chunk.page_content
+    chunk_id = hashlib.md5(chunk_content.encode("utf-8")).hexdigest()
+    return chunk_id
+
 def _store_docs_in_rag(rag_components: RAGComponents, doc_local_path: str, importance_score: float) -> None:
     """将文档存入RAG数据库"""
     print(f"正在加载文档{doc_local_path}...")
@@ -31,13 +39,18 @@ def _store_docs_in_rag(rag_components: RAGComponents, doc_local_path: str, impor
     print("正在切割文本...")    
     chunks = rag_components["text_splitter"].split_documents(docs)
 
-    """赋予重要度分数"""
+    """生成防重id（哈希） + 赋予重要度分数"""
+    chunk_ids = []
     for chunk in chunks:
+        # 生成哈希ID
+        chunk_ids.append(_calculate_chunk_id(chunk))
+        # 赋予重要度分数
         chunk.metadata["importance_score"] = importance_score
         
     print("将数据存入当前目录下的 ./chroma_db 文件夹...")
     rag_components["vectorstore"].add_documents(
         documents = chunks,
+        ids = chunk_ids
     )
 
 def add_rag_node(state: VideoState) -> Command:
@@ -48,7 +61,6 @@ def add_rag_node(state: VideoState) -> Command:
     rag_components = state.get("rag_components", None)
 
     """存储"""
-    # TODO: 去重
     doc_local_path = str(RESOURCES_DIR / "documents" / "static" / "zhaolin_xifangzhexueshijiangyanlu.txt")
     _store_docs_in_rag(rag_components, doc_local_path, importance_score=0.8)
 
