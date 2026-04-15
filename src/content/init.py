@@ -15,7 +15,13 @@ def init_node(state: VideoState) -> Command:
     print("进入初始化节点...")
 
     """路由"""
-    NEXT_NODE = "plan" if state["video_state_config"]["enable_tmp_rag"] == False else "add_rag"
+    NEXT_NODE = None
+    if state["video_state_config"]['enable_podcast_specialization']:
+        """v3.0 播客特化视频制作管线"""
+        NEXT_NODE = "topic"
+    else:
+        """v2.1 通用视频制作管线"""
+        NEXT_NODE = "plan" if state["video_state_config"]["enable_tmp_rag"] == False else "add_rag"
     
     return Command(
         update={

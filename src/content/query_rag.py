@@ -41,7 +41,6 @@ def _raw_text_rag(raw_text: str) -> list[Document]:
 
     return rag_query_results
 
-
 def _query_rag(rag_components: RAGComponents, query: str, top_k: int = 3) -> list[Document]:
     """根据query检索 1 次RAG数据库，返回相关度最高的 top_k 条结果，和每条结果的相关度分数"""
     # print("正在检索相关内容...")

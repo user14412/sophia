@@ -21,48 +21,58 @@ from content.outline import outline_node
 from content.feedback import feedback_node
 from content.query_rag import query_rag_node
 from content.add_rag import add_rag_node
+from content.polish import polish_node
 
-def create_search_pipeline():
+from content3.topic import topic_node
+from content3.director import director_node
+from content3.agent_speechers import agent_speechers_node
+
+from config import RESOURCES_DIR
+
+def create_video_pipeline():
     """创建一个简单的视频制作流程："""
     workflow = StateGraph(VideoState) # 根据状态结构定义状态图的结构
 
-    # 建立状态图的节点和边
-    # 节点是Python函数，输入State，输出Partial State(只输出需要更新 / 聚合的字段即可)
-    workflow.add_node("init", init_node) # 路由
-    
-    workflow.add_node("plan", plan_node)
-    workflow.add_node("outline", outline_node)
-    workflow.add_node("writer", writer_node)
+    """VIEW层节点设计，voice/image/editor节点"""
     workflow.add_node("voice", voice_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
     workflow.add_node("image", image_node)
     workflow.add_node("editor", editor_node)
 
+    """CONTENT层 路由节点"""
+    workflow.add_node("init", init_node)
+
+    """v2.1通用脚本写作节点设计，plan / outline / writer节点"""
+    workflow.add_node("plan", plan_node)
+    workflow.add_node("feedback", feedback_node)
     workflow.add_node("add_rag", add_rag_node)
+    workflow.add_node("outline", outline_node)
     workflow.add_node("query_rag", query_rag_node)
+    workflow.add_node("writer", writer_node)
 
-    workflow.add_node("feedback", feedback_node) # 反馈节点，处理人类 / AI反馈信息
+    """v3.0 播客特化节点"""
+    workflow.add_node("topic", topic_node)
+    workflow.add_node("director", director_node)
+    workflow.add_node("agent_speechers", agent_speechers_node)
+    workflow.add_node("polish", polish_node)
 
-    # 删掉所有静态边，统一用Command
+    """START->init 进入路由节点"""
     workflow.add_edge(START, "init")
 
     memory = InMemorySaver() # 内存临时存储检查点
-    search_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
+    video_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
 
-    # Show the structure of the compiled pipeline
-    # 在Jyputer Notebook中可以查看图片，但要先把下面的main改成 await 因为jupyter本身就已经有一个事件循环了
     print("视频制作流程已编译完成，流程结构如下：")
     from IPython.display import Image, display
-    display(Image(search_pipeline.get_graph(xray=True).draw_mermaid_png()))
+    display(Image(video_pipeline.get_graph(xray=True).draw_mermaid_png()))
 
-    return search_pipeline
+    return video_pipeline
 
 async def app():
     start_time = time.time()
 
     """视频制作助手应用主函数"""
-    search_pipeline = create_search_pipeline()
+    video_pipeline = create_video_pipeline()
     print("🔍 智能视频制作助手启动！")
-
 
     session_count = 0
     config = {"configurable": {"thread_id": f"session-{session_count}"}}
@@ -74,27 +84,36 @@ async def app():
         
         image_mode="static", # 画面配图模式，"generate"表示使用AI生成，"static"表示使用固定图片
 
-        enable_tmp_rag=True
+        enable_tmp_rag=True,
+
+        enable_podcast_specialization=True
     )
 
-    core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
+    core_topic = ""
+    ref_chapter_local_path = ""
+    if video_state_config['enable_podcast_specialization']:
+        ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture05.txt")
+    else:
+        core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
+
     initial_state: VideoState = {
-        # 非None字段
         "messages": [],
-        "step": "init", # 重要
+        "step": "init",
         "video_state_config": video_state_config,
 
-        # plan阶段需要的输入字段
+        # v2.1 管线 plan 阶段需要的输入字段
         "core_topic": core_topic,   
+
+        # v3.0 播客特化管线 topic 阶段需要的输入字段
+        "ref_chapter_local_path": ref_chapter_local_path
     }
     initial_state['step'] = "init" # 重要，不能随便改成其他值
 
-    # 执行工作流
     try:
         print("=" * 60)
 
         # 实时打印AI输出结果
-        async for output in search_pipeline.astream(initial_state, config=config):
+        async for output in video_pipeline.astream(initial_state, config=config):
             for node_name, node_output in output.items():
                 if node_output is None:
                     # 空值判断，不然没有update的节点会报错

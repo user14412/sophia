@@ -43,6 +43,8 @@ class VideoStateConfig(TypedDict):
     # RAG
     enable_tmp_rag: bool # 是否开启临时RAG查询节点
 
+    enable_podcast_specialization: bool # 是否开启播客特化的topic/director/agent_speechers节点设计
+
 class VoiceItem(TypedDict):
     voice_local_path: str # 配音文件路径
     srt_local_path: str # 字幕文件路径
@@ -77,14 +79,39 @@ class DraftItem(TypedDict):
     section_description: str | None
     section_script: str | None
 
+"""3.0 播客特化字段"""
+class TopicItem(TypedDict):
+    topic_id: int
+    topic_name: str
+    core_concept: str
+    zero_to_hero_logic: str
+
+class BulletItem(TypedDict):
+    bullet_id: int
+    intent: str
+    guidance: str
+    transition_hint: str
+
+class StageItem(TypedDict):
+    stage_id: int
+    stage_name: str
+    bullets: list[BulletItem]
+
+class ExtendTopicItem(TypedDict):
+    topic_name: str
+    stages: list[StageItem]
+
+
 # 定义全局状态结构
 class VideoState(TypedDict):
+    """1. 基础字段"""
     messages: Annotated[list, add_messages] # 消息记录
     step: str # 当前步骤
     timings: Annotated[dict, operator.ior]
 
     video_state_config: VideoStateConfig
 
+    """v2.1 通用脚本写作字段"""
     feedback : Feedback | None # 人类 / AI反馈信息
 
     core_topic: str | None # 核心话题：用户指定的关键词
@@ -97,13 +124,24 @@ class VideoState(TypedDict):
 
     current_draft_id: DraftItem | None # 当前正在写作的草稿项id
 
-    rag_query_results: list[str] | None # RAG查询结果列表，包含每条查询结果的文本内容等信息
+    """v3.0 播客特化脚本写作字段"""
+    base_ref_book_local_path: str | None
+    ref_chapter_local_path: str | None # 参考章节本地路径
 
-    # polish阶段输出最终文案，填充到script字段中
+    topic_plan: list[TopicItem] | None
+
+    director_plan: list[ExtendTopicItem] | None
+
     script: str | None # 视频文案
+    
 
+
+    """3. VIEW"""
     voice: VoiceItem | None # 配音信息
 
     images: list[imageItem] | None # 场景图片信息列表，包含每个场景的prompt、生成的图片URL等
 
     video_file_path: str | None # 最终生成的视频文件路径
+
+    """4. KNOWLEDGE"""
+    rag_query_results: list[str] | None # RAG查询结果列表，包含每条查询结果的文本内容等信息
