@@ -8,7 +8,7 @@ from rich import print as rprint
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langgraph.types import Command
 
-from config import llm, VideoState, Proposal
+from config import VIDEO_OUTPUT_DIR, llm, VideoState, Proposal
 
 def plan_node(state: VideoState) -> Command:
     start_time = time.time()
@@ -57,7 +57,9 @@ def plan_node(state: VideoState) -> Command:
                         "messages": [AIMessage(content=f"策划阶段完成，本期视频策划案为：{state['proposal']}")],
                         "step": "plan",
                         "timings": {"plan_node": time.time() - start_time},
-                        "proposal": state['proposal']
+                        "proposal": state['proposal'],
+
+                        "video_local_path": str(VIDEO_OUTPUT_DIR / f"{state['proposal']['title']}.mp4")
                     },
                     goto="outline"
                 )
@@ -116,7 +118,9 @@ def plan_node(state: VideoState) -> Command:
                 "step": "plan",
                 "timings": {"plan_node": time.time() - start_time},
 
-                "proposal": proposal
+                "proposal": proposal,
+
+                "video_local_path": str(VIDEO_OUTPUT_DIR / f"{state['proposal']['title']}.mp4")
             },
             goto="outline"
         )
@@ -130,7 +134,9 @@ def plan_node(state: VideoState) -> Command:
                 "step": "plan",
                 "timings": {"plan_node": time.time() - start_time},
 
-                "proposal": proposal
+                "proposal": proposal,
+
+                "video_local_path": str(VIDEO_OUTPUT_DIR / f"{state['proposal']['title']}.mp4")
             },
             # control flow
             goto="feedback"

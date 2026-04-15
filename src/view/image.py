@@ -290,7 +290,6 @@ if __name__ == "__main__":
                 'img_local_path': str(IMAGE_OUTPUT_DIR / 'img_3.png')
             }
         ],
-        video_file_path=None,
     )
     print("=== 测试 image_node ===")
     image_node(mock_video_state)

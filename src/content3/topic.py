@@ -1,4 +1,5 @@
 import json
+import os
 from rich import print as rprint
 import re
 
@@ -89,13 +90,16 @@ def get_topic_plan(ref_chapter_local_path: str) -> list[TopicItem]:
 
 def topic_node(state: VideoState) -> Command:
     topic_plan = get_topic_plan(state['ref_chapter_local_path'])
+    video_local_path = str(RESOURCES_DIR / "videos" / "output" / f"{os.path.basename(state['ref_chapter_local_path'])}.mp4")
     return Command(
         update={
             "messages": [AIMessage(content=f"粗课题拆解完成，拆解出的粗课题列表如下：{topic_plan}")],
             "step": "topic",
             "timings": {"topic_node": 0.5}, # 模拟拆解耗时
 
-            "topic_plan": topic_plan
+            "topic_plan": topic_plan,
+
+            "video_local_path": video_local_path
         },
         goto="director"
     )

@@ -126,16 +126,13 @@ def editor_node(state: VideoState) -> Command:
     voice_file_path = state['voice']["voice_local_path"]
     srt_file_path = state['voice']["srt_local_path"]
     image_items = state['images']
-    output_path = str(VIDEO_OUTPUT_DIR / f"{state['proposal']['title']}.mp4")
-    generate_video(voice_file_path, srt_file_path, image_items, output_path)
+    generate_video(voice_file_path, srt_file_path, image_items, state['video_local_path'])
     print(f"✂️ 剪辑阶段完成！耗时：{time.time() - start_time:.2f}秒\n")
     return Command(
         update={
-            "messages": [AIMessage(content=f"视频已生成，保存为: {output_path}")],
+            "messages": [AIMessage(content=f"视频已生成，保存为: {state['video_local_path']}")],
             "step": "editor",
             "timings": {"editor_node": time.time() - start_time},
-
-            "video_file_path": output_path
         },
         goto=END
     )
@@ -199,7 +196,7 @@ if __name__ == "__main__":
         'img_local_path': str(IMAGE_OUTPUT_DIR / 'c90f1499-8a72-496b-a025-81ec90c9bc58.png')
     }
         ],
-        video_file_path=""
+        video_local_path="./test_video.mp4"
     )
     print("=== 测试 editor_node ===")
     print(f"RESOURCES_DIR: {str(RESOURCES_DIR)}")

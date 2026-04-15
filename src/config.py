@@ -64,10 +64,10 @@ class imageItem(TypedDict):
     img_url: str | None
 
 class Proposal(TypedDict):
-    title: str # 视频标题
-    topic: str # 视频主题
-    video_plan_length: float # 视频建议长度(s)
-    special_requirements: str # 特殊要求
+    title: str | None # 视频标题
+    topic: str | None # 视频主题
+    video_plan_length: float | None # 视频建议长度(s)
+    special_requirements: str | None # 特殊要求
 
 class Feedback(TypedDict):
     status: str # "Accepted" or "Rejected" / or "Terminated"
@@ -141,7 +141,7 @@ class VideoState(TypedDict):
 
     images: list[imageItem] | None # 场景图片信息列表，包含每个场景的prompt、生成的图片URL等
 
-    video_file_path: str | None # 最终生成的视频文件路径
+    video_local_path: str | None # 最终生成的视频文件路径
 
     """4. KNOWLEDGE"""
     rag_query_results: list[str] | None # RAG查询结果列表，包含每条查询结果的文本内容等信息
