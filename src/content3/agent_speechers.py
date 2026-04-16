@@ -1,5 +1,4 @@
 from typing import TypedDict, List
-from rich import print as rprint
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -9,6 +8,7 @@ from langgraph.types import Command
 
 from config import VideoState, llm, RESOURCES_DIR
 from content.query_rag import _raw_text_rag
+from utils.logger import logger
 
 class CurrentTask(TypedDict):
     topic_id: int
@@ -34,8 +34,7 @@ class CurrentTask(TypedDict):
 4. 优秀案例
 """
 SYSTEM_PROMPT_NAHIDA = """
-你现在是《原神》中的智慧女神纳西妲（Nahida）。
-你正在和书记官艾尔海森共同录制一档关于【西方哲学史】的对谈播客。
+你现在是一名播客主持人。你正在和你的搭档，另一名主持人共同录制一档关于【西方哲学史】的对谈播客。
 
 【你的性格与表达风格】
 1. 充满好奇心与同理心，说话温和。
@@ -51,8 +50,7 @@ SYSTEM_PROMPT_NAHIDA = """
 """
 
 SYSTEM_PROMPT_HAISEN = """
-你现在是《原神》中的书记官艾尔海森。
-你正在和智慧之神纳西妲共同录制一档关于【西方哲学史】的对谈播客。
+你现在是一名播客主持人。你正在和你的搭档，另一名主持人共同录制一档关于【西方哲学史】的对谈播客。
 
 【你的性格与表达风格】
 1. 冷静理性，喜欢用严密的逻辑分析问题。
@@ -119,7 +117,8 @@ template_format="mustache")
 
 def get_script(
     topic_plan: List[dict],
-    director_plan: List[dict]
+    director_plan: List[dict],
+    max_retries=3
 ) -> str:
     last_ai_message_content = "这是上一轮AI的发言内容，当前是第一轮，所以没有。"
     script = ""
@@ -144,10 +143,10 @@ def get_script(
 
                     rag_query_results = rag_query_results
                 )
-                print(f"当前任务{counter}：")
+                logger.info(f"当前任务{counter}：")
 
                 if(counter % 2 == 1):
-                    print("\n当前由纳西妲（Nahida）发言：")
+                    logger.info("\n当前由A（Nahida）发言：")
                     task_prompt = TASK_PROMPT_NAHIDA.invoke({
                         "intent": current_task['intent'],
                         "guidance": current_task['guidance'],
@@ -159,12 +158,12 @@ def get_script(
                     })
 
                     nahida_response = llm.invoke(task_prompt)
-                    print(f"\n纳西妲的回复：")
-                    rprint(nahida_response.content)
-                    script += f"\n纳西妲：{nahida_response.content}\n"
+                    logger.info(f"\nA的回复：")
+                    logger.info(nahida_response.content)
+                    script += f"\nA：{nahida_response.content}\n"
                     last_ai_message_content = nahida_response.content
                 else:
-                    print("\n当前由艾尔海森（Alhaitham）发言：")
+                    logger.info("\n当前由B（Alhaitham）发言：")
                     task_prompt = TASK_PROMPT_HAISEN.invoke({
                         "intent": current_task['intent'],
                         "guidance": current_task['guidance'],
@@ -176,11 +175,11 @@ def get_script(
                     })
 
                     haisen_response = llm.invoke(task_prompt)
-                    print(f"\n艾尔海森的回复：")
-                    rprint(haisen_response.content)
-                    script += f"\n艾尔海森：{haisen_response.content}\n"
+                    logger.info(f"\nB的回复：")
+                    logger.info(haisen_response.content)
+                    script += f"\nB：{haisen_response.content}\n"
                     last_ai_message_content = haisen_response.content
-                print("\n" + "="*80 + "\n")
+                logger.info("\n" + "="*80 + "\n")
     script_local_path = str(RESOURCES_DIR / "documents" / "static" / f"podcast_script_{uuid4()}.txt")
     with open(script_local_path, "w", encoding="utf-8") as f:
         f.write(script)
@@ -441,10 +440,10 @@ if __name__ == "__main__":
 
                     rag_query_results = rag_query_results
                 )
-                print(f"当前任务{counter}：")
+                logger.info(f"当前任务{counter}：")
 
                 if(counter % 2 == 1):
-                    print("\n当前由纳西妲（Nahida）发言：")
+                    logger.info("\n当前由A（Nahida）发言：")
                     task_prompt = TASK_PROMPT_NAHIDA.invoke({
                         "intent": current_task['intent'],
                         "guidance": current_task['guidance'],
@@ -456,11 +455,11 @@ if __name__ == "__main__":
                     })
 
                     nahida_response = llm.invoke(task_prompt)
-                    print(f"\n纳西妲的回复：")
-                    rprint(nahida_response.content)
-                    script += f"\n纳西妲：{nahida_response.content}\n"
+                    logger.info(f"\nA的回复：")
+                    logger.info(nahida_response.content)
+                    script += f"\nA：{nahida_response.content}\n"
                 else:
-                    print("\n当前由艾尔海森（Alhaitham）发言：")
+                    logger.info("\n当前由B（Alhaitham）发言：")
                     task_prompt = TASK_PROMPT_HAISEN.invoke({
                         "intent": current_task['intent'],
                         "guidance": current_task['guidance'],
@@ -472,12 +471,12 @@ if __name__ == "__main__":
                     })
 
                     haisen_response = llm.invoke(task_prompt)
-                    print(f"\n艾尔海森的回复：")
-                    rprint(haisen_response.content)
-                    script += f"\n艾尔海森：{haisen_response.content}\n"
+                    logger.info(f"\nB的回复：")
+                    logger.info(haisen_response.content)
+                    script += f"\nB：{haisen_response.content}\n"
 
                 last_ai_message_content = nahida_response.content
-                print("\n" + "="*80 + "\n")
+                logger.info("\n" + "="*80 + "\n")
     with open("podcast_script.txt", "w", encoding="utf-8") as f:
         f.write(script)
 

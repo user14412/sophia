@@ -133,8 +133,6 @@ class VideoState(TypedDict):
     director_plan: list[ExtendTopicItem] | None
 
     script: str | None # 视频文案
-    
-
 
     """3. VIEW"""
     voice: VoiceItem | None # 配音信息

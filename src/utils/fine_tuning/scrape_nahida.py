@@ -12,8 +12,8 @@ import time
 import re
 
 # 配置区域
-html_file = "艾尔海森语音 - 原神WIKI_BWIKI_哔哩哔哩.html"  # 你上传的文件名
-save_dir = "haisen_dataset"
+html_file = "莫娜语音 - 原神WIKI_BWIKI_哔哩哔哩.html"  # 你上传的文件名
+save_dir = "mona_dataset"
 os.makedirs(save_dir, exist_ok=True)
 
 # 标注文件路径

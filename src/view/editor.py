@@ -1,4 +1,3 @@
-from rich import print as rprint
 import traceback
 import time
 
@@ -8,6 +7,7 @@ from langgraph.types import Command
 from langgraph.graph import END
 
 from config import VideoState, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR, VideoStateConfig
+from utils.logger import logger
 
 # 1. 辅助函数：SRT 时间码转秒数
 def _srt_time_to_seconds(time_str):
@@ -44,12 +44,12 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
     VIDEO_SIZE = (1920, 1080) # 统一画布分辨率，防止图片尺寸不一导致报错
     FONT_PATH = str(FONT_DIR / "Microsoft_YaHei.ttf")
     
-    print("加载音频...")
-    print(f"音频路径: {voice_file_path}")
+    logger.info("加载音频...")
+    logger.info(f"音频路径: {voice_file_path}")
     audio = AudioFileClip(voice_file_path)
     video_duration = audio.duration # 视频总时长以音频为准
 
-    print("构建图片轨道...")
+    logger.info("构建图片轨道...")
     image_clips = []
     for item in image_items:
         start_t = _srt_time_to_seconds(item['start_time'])
@@ -65,7 +65,7 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
                     .with_duration(duration))
         image_clips.append(img_clip)
     
-    print("构建字幕轨道...")
+    logger.info("构建字幕轨道...")
     subs = _parse_srt(srt_file_path)
     text_clips = []
     try:
@@ -89,10 +89,10 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
                         .with_duration(sub['end'] - sub['start']))
             text_clips.append(txt_clip)
     except Exception as e:
-        rprint(f"[red]字幕轨道构建失败: {e}[/red]")
+        logger.error(f"[red]字幕轨道构建失败: {e}[/red]")
         return
 
-    print("合成最终视频...")
+    logger.info("合成最终视频...")
     try:
         # 将图片轨和字幕轨合并（按照列表顺序，后面的会覆盖在前面的图层之上）
         final_video = CompositeVideoClip(image_clips + text_clips, size=VIDEO_SIZE)
@@ -100,10 +100,10 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
         # 挂载音频并裁剪总时长
         final_video = final_video.with_audio(audio).with_duration(video_duration)
     except Exception as e:
-        rprint(f"[red]视频合成失败: {e}[/red]")
+        logger.error(f"[red]视频合成失败: {e}[/red]")
         return
     
-    print("开始渲染导出...")
+    logger.info("开始渲染导出...")
     try:
         # 使用多线程和较快的预设加速渲染
         final_video.write_videofile(
@@ -114,20 +114,20 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
             threads=4,          # 根据你的CPU核心数调整
             preset="ultrafast"  # 加快渲染速度
         )
-        print("视频渲染完成！")
+        logger.info("视频渲染完成！")
     except Exception as e:
-        rprint(f"[red]视频渲染失败: {e}[/red]")
+        logger.error(f"[red]视频渲染失败: {e}[/red]")
         traceback.print_exc()
         return
     
 def editor_node(state: VideoState) -> Command:
     start_time = time.time()
-    print("正在进行视频剪辑合成，请稍候...")
+    logger.info("正在进行视频剪辑合成，请稍候...")
     voice_file_path = state['voice']["voice_local_path"]
     srt_file_path = state['voice']["srt_local_path"]
     image_items = state['images']
     generate_video(voice_file_path, srt_file_path, image_items, state['video_local_path'])
-    print(f"✂️ 剪辑阶段完成！耗时：{time.time() - start_time:.2f}秒\n")
+    logger.info(f"✂️ 剪辑阶段完成！耗时：{time.time() - start_time:.2f}秒\n")
     return Command(
         update={
             "messages": [AIMessage(content=f"视频已生成，保存为: {state['video_local_path']}")],
@@ -198,9 +198,9 @@ if __name__ == "__main__":
         ],
         video_local_path="./test_video.mp4"
     )
-    print("=== 测试 editor_node ===")
-    print(f"RESOURCES_DIR: {str(RESOURCES_DIR)}")
-    print(f"VOICE_OUTPUT_DIR: {str(VOICE_OUTPUT_DIR)}")
-    print(f"IMAGE_OUTPUT_DIR: {str(IMAGE_OUTPUT_DIR)}")
-    print(f"VIDEO_OUTPUT_DIR: {str(VIDEO_OUTPUT_DIR)}\n")
+    logger.info("=== 测试 editor_node ===")
+    logger.info(f"RESOURCES_DIR: {str(RESOURCES_DIR)}")
+    logger.info(f"VOICE_OUTPUT_DIR: {str(VOICE_OUTPUT_DIR)}")
+    logger.info(f"IMAGE_OUTPUT_DIR: {str(IMAGE_OUTPUT_DIR)}")
+    logger.info(f"VIDEO_OUTPUT_DIR: {str(VIDEO_OUTPUT_DIR)}\n")
     editor_node(mock_video_state)

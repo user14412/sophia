@@ -3,7 +3,6 @@ import json
 import subprocess
 import requests
 from uuid import uuid4
-from rich import print as rprint
 import re
 import os 
 
@@ -11,7 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langgraph.types import Command
 
 from config import VideoState, VideoStateConfig,llm, imageItem, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR
-
+from utils.logger import logger
 
 def _srt_time_to_seconds(time_str: str) -> float:
     time_str = time_str.replace(',', '.')
@@ -45,7 +44,7 @@ def scene_split(srt_path: str) -> list[imageItem]:
     with open(srt_path, "r", encoding="utf-8") as f:
         srt_content = f.read()
     scene_count = _get_scene_count_from_srt(srt_path)
-    print(f"我打算生成 {scene_count} 张图。")
+    logger.info(f"我打算生成 {scene_count} 张图。")
     scene_prompt = f"""
     ### 角色任务
     你是一位专业的视频导演和视觉美术指导。请根据提供的 SRT 字幕内容，将其划分为多个连续的视觉场景。
@@ -73,14 +72,14 @@ def scene_split(srt_path: str) -> list[imageItem]:
         ...
     ]
     """
-    print("正在生成场景划分和视觉描述，请稍候...")
+    logger.info("正在生成场景划分和视觉描述，请稍候...")
     scene_response = llm.invoke([SystemMessage(content=scene_prompt)])
 
     try:
         image_items = json.loads(scene_response.content)
-        rprint(image_items)
+        logger.info(image_items)
     except json.JSONDecodeError as e:
-        print("JSONDecodeError:", e)
+        logger.error("JSONDecodeError:", e)
     
     for item in image_items:
         item['img_name'] = f"{uuid4()}.png"
@@ -126,7 +125,7 @@ def text_to_image_generation_qwen(image_item: imageItem) -> imageItem:
             }
     
     # request 调用文生图接口
-    print("🚀 正在发送生图请求，请稍候...")
+    logger.info("🚀 正在发送生图请求，请稍候...")
     # --- 退避重试配置 ---
     base_delay = 2        # 初始等待 2 秒
     max_delay = 90        # 最大等待 90 秒
@@ -136,7 +135,7 @@ def text_to_image_generation_qwen(image_item: imageItem) -> imageItem:
     while attempt < max_attempts:
         attempt += 1
         if attempt > 1:
-            print(f"⏳ 正在进行第 {attempt} 次重试，等待 {current_delay} 秒...")
+            logger.info(f"⏳ 正在进行第 {attempt} 次重试，等待 {current_delay} 秒...")
             time.sleep(current_delay)
         try:
             response = requests.post(url, headers=headers, data=json.dumps(payload))
@@ -144,25 +143,25 @@ def text_to_image_generation_qwen(image_item: imageItem) -> imageItem:
             result = response.json()
             img_url = result.get("output", {}).get("choices", [{}])[0].get("message", {}).get("content", {})[0].get("image", "")
             image_item.update({"img_url": img_url})
-            print("\n✅ 文生图请求成功！")
+            logger.info("\n✅ 文生图请求成功！")
             break # 跳出重试循环
         except requests.HTTPError as e:
             if e.response is not None and e.response.status_code == 429:
-                print(f"⚠️ 第 {attempt} 次尝试：触发限流 (429)。")
+                logger.warning(f"⚠️ 第 {attempt} 次尝试：触发限流 (429)。")
                 if attempt < max_attempts:
                     current_delay = min(current_delay * 2, max_delay)
                     continue
             raise
         except Exception as e:
-            print(f"❌ 文生图发生未知错误: {e}")
+            logger.error(f"❌ 文生图发生未知错误: {e}")
             raise
                         
     # 下载生成的图片URL
     img_url = image_item.get("img_url", "")
     if img_url:
-        print(f"\n生成的图片URL: {img_url}")
+        logger.info(f"\n生成的图片URL: {img_url}")
     else:
-        print("\n⚠️ 服务器返回的结果中未找到图片URL。")
+        logger.warning("\n⚠️ 服务器返回的结果中未找到图片URL。")
         raise RuntimeError("empty_image_url")
 
     img_title = image_item.get("img_name", f"image_{uuid4()}.png")
@@ -172,23 +171,23 @@ def text_to_image_generation_qwen(image_item: imageItem) -> imageItem:
         with open(image_item['img_local_path'], 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
-    print(f"\n图片已成功下载并保存到: {image_item['img_local_path']}")
+    logger.info(f"\n图片已成功下载并保存到: {image_item['img_local_path']}")
 
     return image_item
 
 def generate_image_impl_qwen(state: VideoState) -> Command:
     start_time = time.time()
-    print("进入AI文生图，请稍候...")
+    logger.info("进入AI文生图，请稍候...")
     image_items = scene_split(state['voice']["srt_local_path"])
 
     for idx, image_item in enumerate(image_items):
-        print(f"\n正在为场景 {image_item['scene_id']} 生成图片...")
+        logger.info(f"\n正在为场景 {image_item['scene_id']} 生成图片...")
         image_item = text_to_image_generation_qwen(image_item)
         image_items[idx] = image_item
 
     state['images'] = image_items
     
-    print(f"\n🎨 场景配图已完成！耗时：{time.time() - start_time:.2f}秒\n")
+    logger.info(f"\n🎨 场景配图已完成！耗时：{time.time() - start_time:.2f}秒\n")
     return Command(
         update={
             "messages": [AIMessage(content="场景配图已完成")],
@@ -201,7 +200,7 @@ def generate_image_impl_qwen(state: VideoState) -> Command:
 
 def generate_image_impl_static(state: VideoState) -> Command:
     start_time = time.time()
-    print("进入静态配图模式，直接使用预设图片...")
+    logger.info("进入静态配图模式，直接使用预设图片...")
     from config import RESOURCES_DIR
     static_img_local_path = str(RESOURCES_DIR / "images" / "static" / "srnf.jpg") # HARDCODE
     images = []
@@ -212,8 +211,8 @@ def generate_image_impl_static(state: VideoState) -> Command:
         img_local_path=static_img_local_path,
     )
     images.append(image_item)
-    print(f"\n🎨 场景配图已完成！耗时：{time.time() - start_time:.2f}秒\n")
-    print(f"使用的静态配图对象是：{image_item}")
+    logger.info(f"\n🎨 场景配图已完成！耗时：{time.time() - start_time:.2f}秒\n")
+    logger.info(f"使用的静态配图对象是：{image_item}")
     return Command(
         update={
             "messages": [AIMessage(content="场景配图已完成")],
@@ -291,5 +290,5 @@ if __name__ == "__main__":
             }
         ],
     )
-    print("=== 测试 image_node ===")
+    logger.info("=== 测试 image_node ===")
     image_node(mock_video_state)

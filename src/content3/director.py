@@ -1,5 +1,5 @@
 import json
-from rich import print as rprint
+import time
 import re
 from typing import List
 
@@ -8,14 +8,20 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.types import Command
 
 from config import RESOURCES_DIR, llm, TopicItem, ExtendTopicItem, VideoState
-from content.query_rag import _raw_text_rag
+# from content.query_rag import _raw_text_rag
+from services.raw_text_rag import raw_text_rag
+from utils.logger import logger
 
 def _parse_json_response(content: str):
     """
     健壮的 JSON 提取函数
+    强制替换中文全角引号，为单引号，双引号会破坏JSON格式
     1. 去除 markdown 标签
     2. 提取最外层匹配的 [] 或 {}
     """
+    # 暴力替换 LLM 容易生成的中文引号
+    content = content.replace('“', "'").replace('”', "'").replace("'", "'")
+
     try:
         # 尝试直接解析（如果 LLM 很听话）
         return json.loads(content)
@@ -30,8 +36,8 @@ def _parse_json_response(content: str):
                 pass
         
         # 如果还是不行，可能是因为模型在 JSON 内部用了非法字符，或者截断了
-        print(f"JSON 解析失败，原始内容: {content}")
-        return [] # 返回空列表防止程序崩溃
+        logger.error(f"JSON 解析失败，原始内容: {content}")
+        return None # 触发重试机制
 
 DIRECTOR_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
     ("system", 
@@ -82,6 +88,12 @@ DIRECTOR_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
    - 指导如何自然过渡到下一轮或下一阶段
 
 8. 必须完整覆盖 core_concept
+
+【⚠️致命语法警告⚠️】
+为了防止 JSON 解析崩溃，请严格遵守以下标点规范：
+1. JSON 结构的键名（Key）和字符串值（Value）的最外层边界，必须使用英文半角双引号 `"`。
+2. 在字符串值（Value）的内部叙述中，如果需要强调某个词汇或引用概念，**必须且只能使用单引号（' '）或书名号（《 》）**！
+3. **绝对不要**在字符串值内部出现任何双引号（无论是英文 `"` 还是中文 `“”`），否则会导致 JSON 嵌套冲突直接崩溃！
 
 【输出格式】
 最终输出必须是 JSON，结构如下：
@@ -203,33 +215,62 @@ DIRECTOR_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
 template_format="mustache"
 )
 
+def get_topic_plan(topic, max_retries=3):
+    topic_id = topic['topic_id']
+    topic_name = topic['topic_name']
+    core_concept = topic['core_concept']
+    zero_to_hero_logic = topic['zero_to_hero_logic']
+
+    """ RAG """
+    rag_query_results = raw_text_rag(zero_to_hero_logic)
+
+    """ 设计stage list """
+    stage_prompt = DIRECTOR_PROMPT_TEMPLATE.invoke({
+        "topic_name": topic_name,
+        "core_concept": core_concept,
+        "zero_to_hero_logic": zero_to_hero_logic,
+        "rag_query_results": rag_query_results
+    })
+
+    """ LLM调用报错重试机制 """
+    for attempt in range(max_retries):
+      logger.info(f"\n正在生成关于 '{topic_name}' 的播客大纲... (第 {attempt+1} 次尝试)")
+      try:
+        stage_response = llm.invoke(stage_prompt)
+        stage_plan = _parse_json_response(stage_response.content)
+
+        if stage_plan is not None:  # 解析成功
+            logger.info(f"成功生成 '{topic_name}' 的大纲！")
+            return stage_plan
+        else:
+            logger.warning(f"解析失败，准备重试...")
+      except Exception as e:
+            logger.error(f"生成过程中发生错误: {e}")
+
+      # 稍微等一小会儿再重试，防止 API 并发限制
+      time.sleep(2)
+    
+    logger.error(f"❌ '{topic_name}' 大纲生成失败，已达到最大重试次数！")
+    # # 抛出异常中断
+    # raise Exception(f"无法生成 '{topic_name}' 的大纲")
+    # 返回一个默认的空字典
+    return {"topic_name": topic_name, "stages": []}
+
 def get_director_plan(topic_plan: List[TopicItem]) -> List[ExtendTopicItem]:
     director_plan = []
-    for idx, topic in enumerate(topic_plan):
-        topic_id = topic['topic_id']
-        topic_name = topic['topic_name']
-        core_concept = topic['core_concept']
-        zero_to_hero_logic = topic['zero_to_hero_logic']
+    for _, topic in enumerate(topic_plan):
+        stage_plan = get_topic_plan(topic)
+        
+        # 兼容处理：确保我们往 director_plan 里塞的是字典，而不是键名
+        if isinstance(stage_plan, list) and len(stage_plan) > 0:
+            director_plan.append(stage_plan[0])
+        elif isinstance(stage_plan, dict):
+            director_plan.append(stage_plan)
+        else:
+            logger.error(f"跳过异常的 stage_plan 数据: {stage_plan}")
 
-        """ RAG """
-        rag_query_results = _raw_text_rag(zero_to_hero_logic)
-
-        """ 设计stage list """
-        stage_prompt = DIRECTOR_PROMPT_TEMPLATE.invoke({
-            "topic_name": topic_name,
-            "core_concept": core_concept,
-            "zero_to_hero_logic": zero_to_hero_logic,
-            "rag_query_results": rag_query_results
-        })
-        print(f"\n正在生成关于 '{topic_name}' 的播客大纲...")
-        stage_response = llm.invoke(stage_prompt)
-        # rprint(stage_response.content)
-        stage_plan = _parse_json_response(stage_response.content)
-        print(f"生成的关于 '{topic_name}' 的播客大纲：")
-        rprint(stage_plan)
-        director_plan.append(stage_plan)
-    print("\n\n所有粗课题的播客大纲设计完成！")
-    rprint(director_plan)
+    logger.info("\n\n所有粗课题的播客大纲设计完成！")
+    logger.info(director_plan)
 
     return director_plan
 

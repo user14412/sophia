@@ -1,6 +1,5 @@
 import json
 import os
-from rich import print as rprint
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -9,6 +8,7 @@ from langgraph.types import Command
 
 from config import RESOURCES_DIR, TopicItem, VideoState, llm
 from content.query_rag import _raw_text_rag
+from utils.logger import logger
 
 def _parse_json_response(content: str):
     """
@@ -30,7 +30,7 @@ def _parse_json_response(content: str):
                 pass
         
         # 如果还是不行，可能是因为模型在 JSON 内部用了非法字符，或者截断了
-        print(f"JSON 解析失败，原始内容: {content}")
+        logger.error(f"JSON 解析失败，原始内容: {content}")
         return [] # 返回空列表防止程序崩溃
 
 
@@ -79,12 +79,12 @@ def get_topic_plan(ref_chapter_local_path: str) -> list[TopicItem]:
         "chapter_topic": chapter_topic,
         "chapter_content": chapter_content
     })
-    print("正在生成哲学粗课题拆解方案...")
+    logger.info("正在生成哲学粗课题拆解方案...")
     topic_response = llm.invoke(topic_prompt)
-    rprint(topic_response.content)
+    logger.info(topic_response.content)
     topic_plan = _parse_json_response(topic_response.content)
-    print("生成的哲学粗课题拆解方案：")
-    rprint(topic_plan)
+    logger.info("生成的哲学粗课题拆解方案：")
+    logger.info(topic_plan)
 
     return topic_plan
 
@@ -107,5 +107,5 @@ def topic_node(state: VideoState) -> Command:
 if __name__ == "__main__":
     ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture01.txt")
     topic_plan = get_topic_plan(ref_chapter_local_path)
-    print("生成的哲学粗课题拆解方案：")
-    rprint(topic_plan)
+    logger.info("生成的哲学粗课题拆解方案：")
+    logger.info(topic_plan)

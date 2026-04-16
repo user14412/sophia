@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from config import llm, VideoState, DraftItem
 from services.rag_service import RAGComponents, get_rag_components
+from utils.logger import logger
 
 def _raw_text_rag(raw_text: str) -> list[Document]:
     # """获取RAG组件"""
@@ -32,7 +33,7 @@ def _raw_text_rag(raw_text: str) -> list[Document]:
     # """执行RAG查询"""
     rag_query_results = []
     for idx, constructed_rag_query in enumerate(constructed_rag_querys):
-        # print(f"\n正在执行第 {idx+1} 条RAG查询...")
+        # logger.info(f"\n正在执行第 {idx+1} 条RAG查询...")
         rag_query_results.extend(_query_rag(rag_components, constructed_rag_query, top_k=5))
     
     # """去重，排序，top-k"""
@@ -70,7 +71,7 @@ class RagQueryOutputModel(BaseModel):
 def _construct_rag_query(current_description: str) -> List[str]:
     """构造RAG查询：根据写作指令，让 LLM 生成 3 条扩展查询 + 1 段假设文档，和原始指令拼起来，返回 List[str]"""
     """多扩展查询QME + 假设文档嵌入HyDE"""
-    print(f"⏳ RAG查询优化中(QME+HyDE)，请稍候...")
+    # logger.info(f"⏳ RAG查询优化中(QME+HyDE)，请稍候...")
     
     # 核心 Prompt 设计
     rag_prompt = f"""你是一个专业的检索增强生成（RAG）搜索优化专家。
@@ -127,7 +128,7 @@ def _process_query_results(rag_query_results, top_k: int = 3) -> list[tuple[Docu
     top_k_results = [item for item in top_k_results if item[1] >= 0.5]
 
     """打印出最终结果的 内容 相关度 重要度 等所有字段"""
-    rprint(f"\n最终用于写作阶段的RAG查询结果（共 {len(top_k_results)} 条）：")
+    # logger.info(f"\n最终用于写作阶段的RAG查询结果（共 {len(top_k_results)} 条）：")
     # rprint(top_k_results)
 
     return top_k_results
@@ -149,7 +150,7 @@ def query_rag_node(state: VideoState) -> Command:
 
     # 正常执行 RAG 逻辑
     start_time = time.time()
-    print(f"⏳ RAG查询中，请稍候...")
+    logger.info(f"⏳ RAG查询中，请稍候...")
 
     """获取RAG组件"""
     rag_components = get_rag_components()
@@ -164,15 +165,15 @@ def query_rag_node(state: VideoState) -> Command:
     """执行RAG查询"""
     rag_query_results = []
     for idx, constructed_rag_query in enumerate(constructed_rag_querys):
-        print(f"\n正在执行第 {idx+1} 条RAG查询...")
+        # logger.info(f"\n正在执行第 {idx+1} 条RAG查询...")
         rag_query_results.extend(_query_rag(rag_components, constructed_rag_query, top_k=5))
     
     """去重，排序，top-k"""
     top_k_results = _process_query_results(rag_query_results, top_k=7) # 处理的top_k比查询的top_k大一些，是为了防止HyDE相关度过大，屏蔽原始查询和MQE查询的结果
     rag_query_results = [doc.page_content for doc, score in top_k_results]
 
-    print(f"🧠 RAG查询完成！耗时：{time.time() - start_time:.2f}秒\n")
-    rprint(f"📋 查询到的内容如下：")
+    logger.info(f"🧠 RAG查询完成！耗时：{time.time() - start_time:.2f}秒\n")
+    # logger.info(f"📋 查询到的内容如下：")
     # rprint(top_k_results)
 
     return Command(
@@ -198,14 +199,14 @@ if __name__ == "__main__":
     """执行RAG查询"""
     rag_query_results = []
     for idx, constructed_rag_query in enumerate(constructed_rag_querys):
-        print(f"\n正在执行第 {idx+1} 条RAG查询...")
+        # logger.info(f"\n正在执行第 {idx+1} 条RAG查询...")
         rag_query_results.extend(_query_rag(rag_components, constructed_rag_query, top_k=5))
     
     """去重，排序，top-k"""
     top_k_results = _process_query_results(rag_query_results, top_k=7)
     rag_query_results = [doc.page_content for doc, score in top_k_results]
 
-    print(f"🧠 RAG查询完成！\n")
-    rprint(f"📋 查询到的内容如下：")
-    rprint(top_k_results)
+    # logger.info(f"🧠 RAG查询完成！\n")
+    # logger.info(f"📋 查询到的内容如下：")
+    # logger.info(top_k_results)
 

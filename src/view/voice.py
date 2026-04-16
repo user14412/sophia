@@ -12,7 +12,6 @@ import rich
 import soundfile as sf
 from pydub import AudioSegment
 import torch
-from rich import print as rprint
 import time
 from uuid import uuid4
 from pydantic import BaseModel, Field
@@ -25,6 +24,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import ChatTTS
 
 from config import VideoState, llm, VoiceItem, VOICE_OUTPUT_DIR, RESOURCES_DIR
+from utils.logger import logger
 
 class AudioChunkModel(BaseModel):
     speaker: str = Field(description="说话人角色，通常为 'A' 或 'B'。旁白默认为 'A'")
@@ -55,7 +55,7 @@ class ChatTTSProvider(BaseTTSProvider):
     """ChatTTS 的具体实现类"""
     def __init__(self):
         import ChatTTS
-        print("正在初始化 ChatTTS 引擎...")
+        logger.info("正在初始化 ChatTTS 引擎...")
         self.chat = ChatTTS.Chat()
         # 注意：这里请替换为你实际加载模型的代码
         self.chat.load(compile=False) 
@@ -85,7 +85,6 @@ class ChatTTSProvider(BaseTTSProvider):
 
         # 3. 这时候再调用（不要传参！），它就会固定生成与 seed 对应的音色张量
         spk_emb = self.chat.sample_random_speaker()
-        rprint(type(spk_emb)) 
         
         # 使用源码里的InferCodeParam类包装参数传参
         params = ChatTTS.Chat.InferCodeParams(
@@ -114,23 +113,35 @@ class ChatTTSProvider(BaseTTSProvider):
 class SoVitsProvider(BaseTTSProvider):
     """接入本地部署的 GPT-SoVITS API"""
     def __init__(self, api_url=os.getenv("GPT_SOVITS_API_URL")):
-        print("正在连接 GPT-SoVITS 本地 API...")
+        logger.info("正在连接 GPT-SoVITS 本地 API...")
         self.api_url = api_url
         
         # 定义说话人配置 (替换为你真实的本地参考音频路径和对应的参考文本)
         # 这里特别适合你为哲学频道的不同“嘉宾”设定固定的参考音色
         self.speakers = {
-            "A": {
-                # 纳西妲双最大有点过拟合，换成稍微弱一点的版本可能更清澈一些
-                # "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "nahida_voice_e4_s164.pth"),
-                "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "nahida_voice_e8_s328.pth"),
-                # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e5.ckpt"),
-                # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e10.ckpt"),
-                "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e15.ckpt"),
+            # "A": {
+            #     # 纳西妲双最大有点过拟合，换成稍微弱一点的版本可能更清澈一些
+            #     # "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "nahida_voice_e4_s164.pth"),
+            #     "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "nahida_voice_e8_s328.pth"),
+            #     # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e5.ckpt"),
+            #     # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e10.ckpt"),
+            #     "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "nahida_voice-e15.ckpt"),
 
-                # 参考音频：从你那 30 个原神语音里挑一句最完美的，填在这里
-                "ref_audio_path": str(RESOURCES_DIR / "voice" / "static" / "reference_audio" / "nahida_morning.wav"), 
-                "prompt_text": "早上好，我们赶快出发吧，这世上有太多的东西都是过时不候的呢。",
+            #     # 参考音频：从你那 30 个原神语音里挑一句最完美的，填在这里
+            #     "ref_audio_path": str(RESOURCES_DIR / "voice" / "static" / "reference_audio" / "nahida_morning.wav"), 
+            #     "prompt_text": "早上好，我们赶快出发吧，这世上有太多的东西都是过时不候的呢。",
+            #     "prompt_lang": "zh"
+            # },
+            "A": {
+                # 莫娜
+                # "sovits_path": str(RESOURCES_DIR / "voice" / "weights" / "sovits_weights" / "mona_voice_e4_s136.pth"),
+                # "sovits_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "sovits_weights" / "mona_voice_e8_s272.pth"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "mona_voice-e5.ckpt"),
+                # "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "mona_voice-e10.ckpt"),
+                "gpt_path": str(RESOURCES_DIR / "voice" / "static" / "weights" / "gpt_weights" / "mona_voice-e15.ckpt"),
+
+                "ref_audio_path": str(RESOURCES_DIR / "voice" / "static" / "reference_audio" / "mona_wuyu.wav"), 
+                "prompt_text": "限制物欲是占星术士修行的一部分，只有简朴地生活，才能窥探到世界的真实。",
                 "prompt_lang": "zh"
             },
             "B": {
@@ -180,7 +191,7 @@ class SoVitsProvider(BaseTTSProvider):
             return audio_array, duration
             
         except Exception as e:
-            print(f"[错误] GPT-SoVITS API 请求失败: {e}")
+            logger.error(f"[错误] GPT-SoVITS API 请求失败: {e}")
             # 发生错误时返回空数组，避免阻塞整个管线
             return np.array([]), 0.0
 
@@ -232,9 +243,9 @@ class ScriptParserNode:
             if temp_text.strip():
                 chunks.append(AudioChunk(speaker=speaker, text=temp_text.strip()))
             
-        print("解析脚本行得到下面的 Chunk：")
+        logger.info("解析脚本行得到下面的 Chunk：")
         for chunk in chunks:
-            print(f"  - [{chunk.speaker}] {chunk.text}")
+            logger.info(f"  - [{chunk.speaker}] {chunk.text}")
         return chunks
 
     @staticmethod
@@ -279,7 +290,7 @@ class ScriptParserNode:
             """
 
             """结构化大语言模型输出"""
-            print(f"⏳ 正在调用大模型进行语义级断句切分...")
+            logger.info(f"⏳ 正在调用大模型进行语义级断句切分...")
             structured_llm = llm.with_structured_output(
                 ChunkOutputModel,
                 method="function_calling"
@@ -295,9 +306,9 @@ class ScriptParserNode:
                 if item.text.strip():
                     chunks.append(AudioChunk(speaker=item.speaker, text=item.text.strip()))
             result_chunks.extend(chunks)
-        print(f"✅ 解析完成，共切分为 {len(result_chunks)} 个 Chunk：")
+        logger.info(f"✅ 解析完成，共切分为 {len(result_chunks)} 个 Chunk：")
         for chunk in result_chunks:
-            print(f"  - [{chunk.speaker}] {chunk.text}")
+            logger.info(f"  - [{chunk.speaker}] {chunk.text}")
             
         return result_chunks
 
@@ -310,7 +321,7 @@ class AudioGenerationNode:
         current_time = 0.0 # 全局时间轴游标
         
         for i, chunk in enumerate(chunks):
-            print(f"正在生成 [{chunk.speaker}]: {chunk.text}")
+            logger.info(f"正在生成 [{chunk.speaker}]: {chunk.text}")
             
             # 1. 调用底层的 TTS 引擎生成这句的声音
             audio_array, duration = self.tts.generate(chunk.text, chunk.speaker)
@@ -385,14 +396,14 @@ class ExportNode:
         sf.write(temp_wav, master_audio_array, sample_rate)
         
         # 转换为 MP3 (需要 FFmpeg 支持)
-        print("正在将音频转换为 MP3...")
+        logger.info("正在将音频转换为 MP3...")
         mp3_path = f"{output_name}.mp3"
         try:
             audio_seg = AudioSegment.from_wav(temp_wav)
             audio_seg.export(mp3_path, format="mp3")
             os.remove(temp_wav) # 删掉临时 wav 文件
         except Exception as e:
-            print(f"MP3 转码失败 (是否未安装 FFmpeg?), 已保留 Wav 文件: {e}")
+            logger.error(f"MP3 转码失败 (是否未安装 FFmpeg?), 已保留 Wav 文件: {e}")
             mp3_path = temp_wav
 
         # 2. 组合 SRT 文本
@@ -411,9 +422,9 @@ class ExportNode:
         with open(srt_path, "w", encoding="utf-8") as f:
             f.write(srt_content)
             
-        print(f"=== 导出完成 ===")
-        print(f"音频: {mp3_path}")
-        print(f"字幕: {srt_path}")
+        logger.info(f"=== 导出完成 ===")
+        logger.info(f"音频: {mp3_path}")
+        logger.info(f"字幕: {srt_path}")
 
 def script_to_voice_generation_gpt_sovits(script: str) -> VoiceItem:
     """脚本 -- TTS --> 语音"""
@@ -425,13 +436,13 @@ def script_to_voice_generation_gpt_sovits(script: str) -> VoiceItem:
     exporter = ExportNode()
     
     # 按照流水线顺序执行
-    print(">>> 1. 开始解析并切分脚本")
+    logger.info(">>> 1. 开始解析并切分脚本")
     chunks = parser.parse_llm(script)
     
-    print(">>> 2. 开始逐句生成音频与时间轴")
+    logger.info(">>> 2. 开始逐句生成音频与时间轴")
     processed_chunks = generator.process(chunks)
     
-    print(">>> 3. 开始合并导出 MP3 与 SRT")
+    logger.info(">>> 3. 开始合并导出 MP3 与 SRT")
     output_name = str(VOICE_OUTPUT_DIR / str(uuid4())) # 生成一个随机的基础文件名，避免冲突
     exporter.export(processed_chunks, output_name=output_name) # 去掉 .mp3 后缀作为输出基础名
 
@@ -554,11 +565,11 @@ if __name__ == "__main__":
     exporter = ExportNode()
     
     # 按照流水线顺序执行
-    print(">>> 1. 开始解析并切分脚本")
+    logger.info(">>> 1. 开始解析并切分脚本")
     chunks = parser.parse_llm(raw_script)
     
-    print(">>> 2. 开始逐句生成音频与时间轴")
+    logger.info(">>> 2. 开始逐句生成音频与时间轴")
     processed_chunks = generator.process(chunks)
     
-    print(">>> 3. 开始合并导出 MP3 与 SRT")
+    logger.info(">>> 3. 开始合并导出 MP3 与 SRT")
     exporter.export(processed_chunks, output_name="test_conversation")

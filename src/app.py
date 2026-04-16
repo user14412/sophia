@@ -28,6 +28,7 @@ from content3.director import director_node
 from content3.agent_speechers import agent_speechers_node
 
 from config import RESOURCES_DIR
+from utils.logger import logger
 
 def create_video_pipeline():
     """创建一个简单的视频制作流程："""
@@ -61,9 +62,7 @@ def create_video_pipeline():
     memory = InMemorySaver() # 内存临时存储检查点
     video_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
 
-    print("视频制作流程已编译完成，流程结构如下：")
-    from IPython.display import Image, display
-    display(Image(video_pipeline.get_graph(xray=True).draw_mermaid_png()))
+    logger.info("视频制作流程已编译完成")
 
     return video_pipeline
 
@@ -73,6 +72,7 @@ async def app():
     """视频制作助手应用主函数"""
     video_pipeline = create_video_pipeline()
     print("🔍 智能视频制作助手启动！")
+    logger.info("智能视频制作助手启动！")
 
     session_count = 0
     config = {"configurable": {"thread_id": f"session-{session_count}"}}
@@ -92,7 +92,7 @@ async def app():
     core_topic = ""
     ref_chapter_local_path = ""
     if video_state_config['enable_podcast_specialization']:
-        ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture05.txt")
+        ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture02.txt")
     else:
         core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
 
@@ -109,8 +109,10 @@ async def app():
     }
     initial_state['step'] = "init" # 重要，不能随便改成其他值
 
+    logger.info(f"本次项目启动状态与配置如下：\n{initial_state}\n")
+
     try:
-        print("=" * 60)
+        logger.info("=" * 60)
 
         # 实时打印AI输出结果
         async for output in video_pipeline.astream(initial_state, config=config):
@@ -122,21 +124,21 @@ async def app():
                     latest_message = node_output["messages"][-1]
                     if isinstance(latest_message, AIMessage):
                         match node_name:
-                            case "plan": print(f"📝 策划阶段：{latest_message.content}")
-                            case "outline": print(f"🧾 大纲阶段：{latest_message.content}")
-                            case "writer": print(f"🧠 写作阶段：{latest_message.content}")
-                            case "voice": print(f"🎤 配音阶段：{latest_message.content}")
-                            case "image": print(f"🖼️ 画面阶段：{latest_message.content}")
-                            case "editor": print(f"✂️ 剪辑阶段：{latest_message.content}")
-                            case "feedback": print(f"🔄 反馈阶段：{latest_message.content}")
+                            case "plan": logger.info(f"📝 策划阶段：{latest_message.content}")
+                            case "outline": logger.info(f"🧾 大纲阶段：{latest_message.content}")
+                            case "writer": logger.info(f"🧠 写作阶段：{latest_message.content}")
+                            case "voice": logger.info(f"🎤 配音阶段：{latest_message.content}")
+                            case "image": logger.info(f"🖼️ 画面阶段：{latest_message.content}")
+                            case "editor": logger.info(f"✂️ 剪辑阶段：{latest_message.content}")
+                            case "feedback": logger.info(f"🔄 反馈阶段：{latest_message.content}")
         timings = time.time() - start_time
-        print(f"\n🎉 视频制作流程完成！总耗时：{timings:.2f}秒")
-        print("\n" + "=" * 60 + "\n")
+        logger.info(f"\n🎉 视频制作流程完成！总耗时：{timings:.2f}秒")
+        logger.info("\n" + "=" * 60 + "\n")
 
     except Exception as e:
-        print(f"❌ 发生错误：{type(e).__name__}: {str(e)}")
+        logger.error(f"❌ 发生错误：{type(e).__name__}: {str(e)}")
         # 打印详细的堆栈跟踪，直接告诉你错误在哪一行
         traceback.print_exc()
-        print("请重新输入您的问题，或检查您的网络连接和API密钥配置。")                      
+        logger.error("请重新输入您的问题，或检查您的网络连接和API密钥配置。")                      
 if __name__ == "__main__":
     asyncio.run(app())
