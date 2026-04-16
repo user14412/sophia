@@ -9,6 +9,7 @@ import json
 import time
 from typing import List
 from rich import print as rprint
+import asyncio
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langgraph.types import Command
@@ -21,20 +22,21 @@ from config import llm, VideoState, DraftItem
 from services.rag_service import RAGComponents, get_rag_components
 from utils.logger import logger
 
-def _raw_text_rag(raw_text: str) -> list[Document]:
+async def _raw_text_rag(raw_text: str) -> list[Document]:
     # """获取RAG组件"""
     rag_components = get_rag_components()
     
     current_description = raw_text
 
     # """构造RAG查询"""
-    constructed_rag_querys = _construct_rag_query(current_description)
+    constructed_rag_querys = await _construct_rag_query(current_description)
 
     # """执行RAG查询"""
+    tasks = [_query_rag(rag_components, q, top_k=5) for q in constructed_rag_querys]
+    gathered_results = await asyncio.gather(*tasks)
     rag_query_results = []
-    for idx, constructed_rag_query in enumerate(constructed_rag_querys):
-        # logger.info(f"\n正在执行第 {idx+1} 条RAG查询...")
-        rag_query_results.extend(_query_rag(rag_components, constructed_rag_query, top_k=5))
+    for result in gathered_results:
+        rag_query_results.extend(result)
     
     # """去重，排序，top-k"""
     top_k_results = _process_query_results(rag_query_results, top_k=7) # 处理的top_k比查询的top_k大一些，是为了防止HyDE相关度过大，屏蔽原始查询和MQE查询的结果
@@ -42,13 +44,13 @@ def _raw_text_rag(raw_text: str) -> list[Document]:
 
     return rag_query_results
 
-def _query_rag(rag_components: RAGComponents, query: str, top_k: int = 3) -> list[Document]:
+async def _query_rag(rag_components: RAGComponents, query: str, top_k: int = 3) -> list[Document]:
     """根据query检索 1 次RAG数据库，返回相关度最高的 top_k 条结果，和每条结果的相关度分数"""
     # print("正在检索相关内容...")
     # print(f"\nquery如下：{query}")
     
     # 之前设定的是预先距离，自动归一化到0-1之间
-    structured_retriever_docs = rag_components['vectorstore'].similarity_search_with_relevance_scores(
+    structured_retriever_docs = await rag_components['vectorstore'].asimilarity_search_with_relevance_scores(
         query=query,
         k=top_k
     )
@@ -68,7 +70,7 @@ class RagQueryOutputModel(BaseModel):
     hypothetical_document: str = Field(
         description="一段假设性文档(HyDE段落)，模拟能够完美解答该指令的高质量参考段落（约100-200字）"
     )
-def _construct_rag_query(current_description: str) -> List[str]:
+async def _construct_rag_query(current_description: str) -> List[str]:
     """构造RAG查询：根据写作指令，让 LLM 生成 3 条扩展查询 + 1 段假设文档，和原始指令拼起来，返回 List[str]"""
     """多扩展查询QME + 假设文档嵌入HyDE"""
     # logger.info(f"⏳ RAG查询优化中(QME+HyDE)，请稍候...")
@@ -100,7 +102,7 @@ def _construct_rag_query(current_description: str) -> List[str]:
     )
     
     # 调用大模型
-    response_obj = structured_llm.invoke([SystemMessage(content=rag_prompt)])
+    response_obj = await structured_llm.ainvoke([SystemMessage(content=rag_prompt)])
     
     # 组装最终用于检索的 Query 列表：
     # 包含：1条原始描述 + 3条扩展查询 + 1段假设性文档

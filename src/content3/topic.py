@@ -7,7 +7,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.types import Command
 
 from config import RESOURCES_DIR, TopicItem, VideoState, llm
-from content.query_rag import _raw_text_rag
 from utils.logger import logger
 
 def _parse_json_response(content: str):
@@ -105,7 +104,7 @@ def topic_node(state: VideoState) -> Command:
     )
 
 if __name__ == "__main__":
-    ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture01.txt")
+    ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture03.txt")
     topic_plan = get_topic_plan(ref_chapter_local_path)
     logger.info("生成的哲学粗课题拆解方案：")
     logger.info(topic_plan)

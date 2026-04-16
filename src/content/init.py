@@ -10,9 +10,10 @@ from langgraph.types import Command
 from langgraph.graph import END
 
 from config import llm, VideoState
+from utils.logger import logger
 
 def init_node(state: VideoState) -> Command:
-    print("进入初始化节点...")
+    logger.info("进入初始化节点...")
 
     """路由"""
     NEXT_NODE = None

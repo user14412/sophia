@@ -17,6 +17,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 import requests
 import io
+import asyncio
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langgraph.types import Command
@@ -25,6 +26,7 @@ import ChatTTS
 
 from config import VideoState, llm, VoiceItem, VOICE_OUTPUT_DIR, RESOURCES_DIR
 from utils.logger import logger
+from utils.timer import time_it, async_time_it
 
 class AudioChunkModel(BaseModel):
     speaker: str = Field(description="说话人角色，通常为 'A' 或 'B'。旁白默认为 'A'")
@@ -248,15 +250,20 @@ class ScriptParserNode:
             logger.info(f"  - [{chunk.speaker}] {chunk.text}")
         return chunks
 
+    @async_time_it
     @staticmethod
-    def parse_llm(raw_script: str) -> list['AudioChunk']:
+    async def parse_llm(raw_script: str) -> list['AudioChunk']:
         import textwrap
-        max_length = 1000
+        max_length = 2000
         raw_scripts = textwrap.wrap(raw_script, max_length, break_long_words=True)
-        result_chunks = []
-        for i, part in enumerate(raw_scripts):
-            chunk_prompt = f"""
-                你是一位专业的视频配音导演。你的任务是清洗文案、识别角色，并将其切分为适合配音的短句。
+        
+        max_concurrent = 10
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def process_part(part: str):
+            async with semaphore:
+                chunk_prompt = f"""
+                你是一位专业的视频配音导演。你的任务是清洗文案、识别角色，并将其切分为适合配音的句子。
 
                 【原始文案】
                 {part}
@@ -274,7 +281,7 @@ class ScriptParserNode:
                 - **剔除人名标签**：删除行首的角色名和冒号（如：删除 "A:"、"钟离："），只保留纯台词。
 
                 3. **切分与字数控制**：
-                - 每个 `text` 的字数严格控制在 **30-50** 个字之间。
+                - 每个 `text` 的字数根据实际语义情况切分，建议控制在 **60-80** 个字之间。不要机械地按字数切分，要保证切分点是自然的语义停顿处。否则可能会导致生成的音频听起来断断续续，缺乏流畅感。
                 - 切分点必须是句号、问号、感叹号或自然的语义转折处。
                 - 将一句末尾的部分句号替换为省略号 ... 或破折号 ——，方便TTS引擎发出轻微尾音。
                 - 如果有些词语之间需要停顿，适当多使用逗号。GPT-SoVITS 遇到逗号时，天然会生成一个小小的停顿和微弱的换气感。
@@ -288,24 +295,26 @@ class ScriptParserNode:
                     ...
                 ]
             """
+                logger.info(f"⏳ 正在调用大模型进行语义级断句切分...")
+                structured_llm = llm.with_structured_output(
+                    ChunkOutputModel,
+                    method="function_calling"
+                )
 
-            """结构化大语言模型输出"""
-            logger.info(f"⏳ 正在调用大模型进行语义级断句切分...")
-            structured_llm = llm.with_structured_output(
-                ChunkOutputModel,
-                method="function_calling"
-            )
-            
-            response_obj = structured_llm.invoke([SystemMessage(content=chunk_prompt)])
-            generated_chunks = response_obj.chunks
-            
-            # 将 Pydantic 模型直接转为流水线需要的 AudioChunk 实例
-            chunks = []
-            for item in generated_chunks:
-                # 过滤掉可能的空白脏数据
-                if item.text.strip():
-                    chunks.append(AudioChunk(speaker=item.speaker, text=item.text.strip()))
-            result_chunks.extend(chunks)
+                response_obj = await structured_llm.ainvoke([SystemMessage(content=chunk_prompt)])
+
+                return [
+                    AudioChunk(speaker=item.speaker, text=item.text.strip())
+                    for item in response_obj.chunks if item.text.strip()
+                ]
+        
+        tasks = [process_part(part) for part in raw_scripts]
+        results_lists = await asyncio.gather(*tasks)
+
+        result_chunks = []
+        for chunk in results_lists:
+            result_chunks.extend(chunk)
+
         logger.info(f"✅ 解析完成，共切分为 {len(result_chunks)} 个 Chunk：")
         for chunk in result_chunks:
             logger.info(f"  - [{chunk.speaker}] {chunk.text}")
@@ -377,9 +386,9 @@ class ExportNode:
             if i < len(chunks) - 1:
                 next_chunk = chunks[i+1]
                 
-                # 策略：如果是同一个人继续说话，停顿短一点 (例如 0.4 秒)
-                # 如果是切换角色对话，停顿长一点 (例如 0.8 秒)
-                pause_duration = 0.4 if chunk.speaker == next_chunk.speaker else 0.8
+                # 策略：如果是同一个人继续说话，停顿短一点 (例如 0.2 秒)
+                # 如果是切换角色对话，停顿长一点 (例如 0.6 秒)
+                pause_duration = 0.2 if chunk.speaker == next_chunk.speaker else 0.6
                 
                 # 生成纯静音数组 (长度 = 停顿秒数 * 采样率)
                 silence_array = np.zeros(int(pause_duration * sample_rate), dtype=np.float32)
@@ -426,7 +435,7 @@ class ExportNode:
         logger.info(f"音频: {mp3_path}")
         logger.info(f"字幕: {srt_path}")
 
-def script_to_voice_generation_gpt_sovits(script: str) -> VoiceItem:
+async def script_to_voice_generation_gpt_sovits(script: str) -> VoiceItem:
     """脚本 -- TTS --> 语音"""
     # tts_provider = ChatTTSProvider() 
     tts_provider = SoVitsProvider() 
@@ -437,7 +446,7 @@ def script_to_voice_generation_gpt_sovits(script: str) -> VoiceItem:
     
     # 按照流水线顺序执行
     logger.info(">>> 1. 开始解析并切分脚本")
-    chunks = parser.parse_llm(script)
+    chunks = await ScriptParserNode.parse_llm(script)
     
     logger.info(">>> 2. 开始逐句生成音频与时间轴")
     processed_chunks = generator.process(chunks)
@@ -471,6 +480,25 @@ def voice_node(state: VideoState) -> Command:
         },
         goto="image"
     )
+
+async def test(raw_script: str):
+    # 初始化流水线组件
+    # 注意：如果你当前想只用 CPU 测逻辑，你可以自己写个 MockProvider 替代 ChatTTSProvider
+    tts_provider = SoVitsProvider() 
+    
+    parser = ScriptParserNode()
+    generator = AudioGenerationNode(tts_provider)
+    exporter = ExportNode()
+    
+    # 按照流水线顺序执行
+    logger.info(">>> 1. 开始解析并切分脚本")
+    chunks = await ScriptParserNode.parse_llm(raw_script)
+    
+    logger.info(">>> 2. 开始逐句生成音频与时间轴")
+    processed_chunks = generator.process(chunks)
+    
+    logger.info(">>> 3. 开始合并导出 MP3 与 SRT")
+    exporter.export(processed_chunks, output_name="test_conversation")
 
 # ==========================================
 # 4. 主程序入口 (Main)
@@ -556,20 +584,4 @@ if __name__ == "__main__":
 # 期待在弹幕与评论区，看到你的观察与思考。我们下次再见。
 
 #     """
-    # 初始化流水线组件
-    # 注意：如果你当前想只用 CPU 测逻辑，你可以自己写个 MockProvider 替代 ChatTTSProvider
-    tts_provider = SoVitsProvider() 
-    
-    parser = ScriptParserNode()
-    generator = AudioGenerationNode(tts_provider)
-    exporter = ExportNode()
-    
-    # 按照流水线顺序执行
-    logger.info(">>> 1. 开始解析并切分脚本")
-    chunks = parser.parse_llm(raw_script)
-    
-    logger.info(">>> 2. 开始逐句生成音频与时间轴")
-    processed_chunks = generator.process(chunks)
-    
-    logger.info(">>> 3. 开始合并导出 MP3 与 SRT")
-    exporter.export(processed_chunks, output_name="test_conversation")
+    asyncio.run(test(raw_script))
