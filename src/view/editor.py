@@ -1,5 +1,7 @@
 import traceback
 import time
+import subprocess
+from pathlib import Path
 
 from moviepy import ImageClip, TextClip, AudioFileClip, CompositeVideoClip
 from langchain_core.messages import AIMessage
@@ -8,6 +10,7 @@ from langgraph.graph import END
 
 from config import VideoState, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR, VideoStateConfig
 from utils.logger import logger
+from utils.timer import time_it
 
 # 1. 辅助函数：SRT 时间码转秒数
 def _srt_time_to_seconds(time_str):
@@ -38,8 +41,10 @@ def _parse_srt(srt_file_path):
     return subs
 
 # 3. 核心剪辑函数
-def generate_video(voice_file_path, srt_file_path, image_items, output_path="output.mp4"):
+@time_it
+def generate_video_moviepy(voice_file_path, srt_file_path, image_items, output_path="output.mp4"):
     """将完全对齐的音频、图片和字幕合成最终视频"""
+    logger.info("🎬 开始使用moviepy合成视频...")
     # 视频基础设置
     VIDEO_SIZE = (1920, 1080) # 统一画布分辨率，防止图片尺寸不一导致报错
     FONT_PATH = str(FONT_DIR / "Microsoft_YaHei.ttf")
@@ -119,14 +124,80 @@ def generate_video(voice_file_path, srt_file_path, image_items, output_path="out
         logger.error(f"[red]视频渲染失败: {e}[/red]")
         traceback.print_exc()
         return
+
+@time_it
+def generate_video_ffmpeg(voice_file_path, srt_file_path, image_items=[], output_path="output.mp4"):
+    logger.info("🎬 开始使用ffmpeg极速合成视频...")
+    srt_file_path = str(Path(srt_file_path).absolute()).replace('\\', '/').replace(':', '\\:')
+
+    # 完美的字幕样式配置
+    # FontSize: 字体大小
+    # PrimaryColour: 字体颜色 (这里是纯白 &H00FFFFFF)
+    # OutlineColour: 描边颜色 (纯黑 &H00000000)
+    # Outline: 描边粗细 (2像素，让字幕更清晰)
+    # MarginV: 底部边距 (调大这个值，比如30或40，绝对不会再被切掉下半部分！)
+    # Fontname: 字体名称 (如果需要可加，如 Fontname=SimHei)
+    subtitle_style = "FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=1,MarginV=40"
+
+    from config import RESOURCES_DIR
+
+    # TODO: 这里是硬编码的静态图
+    static_img_local_path = str(RESOURCES_DIR / "images" / "static" / "srnf.jpg") # HARDCODE
     
-def editor_node(state: VideoState) -> Command:
+    command = [
+        "ffmpeg",
+        "-y",
+        "-loop", "1",
+        "-framerate", "5",
+        "-i", static_img_local_path,
+        "-i", voice_file_path,
+
+        "-vf", f"subtitles='{srt_file_path}':force_style='{subtitle_style}'",
+
+        "-c:v", "h264_nvenc",
+        "-preset", "p6",  # NVENC 的预设配置，p6 速度极快且画质好
+
+        # 删掉了 "-tune", "stillimage", 因为硬件编码不需要且不识别它
+        
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+        
+        "-async", "1",        
+        "-fps_mode", "cfr",   # 替换掉了过时的 "-vsync", "1"，保持恒定帧率防音视频脱节
+        output_path 
+    ]
+
+    try:
+        # 执行命令，隐藏原本满屏的日志，只抓取报错
+        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        if process.returncode != 0:
+            logger.error(f"FFmpeg 报错:\n{process.stderr}")
+            raise RuntimeError("视频合成失败！")
+            
+        end_time = time.perf_counter()
+        logger.info(f"✅ 视频合成完毕！保存至: {output_path}")
+        
+    except FileNotFoundError:
+        logger.error("❌ 找不到 ffmpeg！请确认你的电脑已安装 FFmpeg 并配置了环境变量。")
+
+def editor_node(state: VideoState, video_generation_method: str = "ffmpeg") -> Command:
     start_time = time.time()
     logger.info("正在进行视频剪辑合成，请稍候...")
     voice_file_path = state['voice']["voice_local_path"]
     srt_file_path = state['voice']["srt_local_path"]
     image_items = state['images']
-    generate_video(voice_file_path, srt_file_path, image_items, state['video_local_path'])
+    
+    if video_generation_method == "moviepy":
+        generate_video_moviepy(voice_file_path, srt_file_path, image_items, state['video_local_path'])
+    elif video_generation_method == "ffmpeg":
+        generate_video_ffmpeg(voice_file_path, srt_file_path, image_items, state['video_local_path'])
+    else:
+        logger.error(f"不支持的视频生成方法: {video_generation_method}")
+        return
+
     logger.info(f"✂️ 剪辑阶段完成！耗时：{time.time() - start_time:.2f}秒\n")
     return Command(
         update={
@@ -138,69 +209,6 @@ def editor_node(state: VideoState) -> Command:
     )
 
 if __name__ == "__main__":
-    # 这里可以放一些测试代码，直接调用 editor_node 来验证功能
-    mock_video_state = VideoState(
-        messages=[],
-        step="image",
-        timings={},
-        
-        video_state_config=VideoStateConfig(
-            max_attempts=3,
-            enable_ai_reflection=False,
-            enable_human_in_the_loop=True
-        ),
-
-        core_topic="测试主题",
-        
-        proposal={
-            "title": "测试视频",
-            "topic": "测试主题",
-            "video_plan_length": 180.0,
-            "special_requirements": "无"
-        },
-        
-        draft=[],
-        
-        script="这是一个测试视频的脚本。",
-        voice={
-            "voice_local_path": str(VOICE_OUTPUT_DIR / "8b8cf227-bcb5-417e-bb20-5bd806d75031.mp3"),
-            "srt_local_path": str(VOICE_OUTPUT_DIR / "8b8cf227-bcb5-417e-bb20-5bd806d75031.srt"),
-            "voice_length": 184.19
-        },
-        images=[
-            {
-        'scene_id': 1,
-        'start_time': '00:00:00,000',
-        'end_time': '00:01:16,835',
-        'prompt': '一个光线略显昏暗的复古理发店内部，门口玻璃上贴着一张泛黄的告示，上面写着关于理发师刮胡子的奇怪规定。一位顾客站在店内，手摸着光滑的下巴，脸上露出困惑的表情。理发师站在一旁，面带微笑，但他自己却留着浓密的胡子。画面采用写实电影感风格，带有柔和的侧光，营造出一种略带诡异和悬疑的氛围。',
-        'img_name': 'img_1',
-        'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / 'fe8210a4-8e3c-4f53-904c-2fee3c25cd1c.png')
-    },
-    {
-        'scene_id': 2,
-        'start_time': '00:01:16,835',
-        'end_time': '00:03:22,606',
-        'prompt': '画面分裂为两个对称的镜面世界。左侧，理发师手持剃刀，正对着镜子准备给自己刮胡子，但他的动作凝固了，脸上是逻辑冲突的挣扎。右侧，理发师放下剃刀，拒绝给自己刮胡子，但镜中的规则文字如锁链般缠绕着他。背景中浮现出抽象的集合符号和目录书架，象征着悖论的数学本质。整体是超现实的、带有轻微赛博朋克霓虹色调的插画风格，强调逻辑的纠缠与困境。',
-        'img_name': 'img_2',
-        'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / '70354521-f7b9-4443-a2de-a44f2eb31269.png')
-    },
-    {
-        'scene_id': 3,
-        'start_time': '00:03:22,606',
-        'end_time': '00:07:43,325',
-        'prompt': '一个宏大的、由无数齿轮、电路和数学公式构成的抽象结构，象征着数学大厦与逻辑体系。结构的一角出现了理发师悖论引发的裂缝，裂缝中透出光芒。裂缝蔓延，连接至计算机代码流和哥德尔不完备定理的符号。最后，画面定格在一面现代浴室镜前，镜中映出观众自己的模糊倒影，剃须泡沫还挂在脸上。风格是融合了写实细节与概念艺术的电影海报感，色调从危机的灰暗转向思考的深邃蓝色。',
-        'img_name': 'img_3',
-        'img_url': None,
-        'img_local_path': str(IMAGE_OUTPUT_DIR / 'c90f1499-8a72-496b-a025-81ec90c9bc58.png')
-    }
-        ],
-        video_local_path="./test_video.mp4"
-    )
-    logger.info("=== 测试 editor_node ===")
-    logger.info(f"RESOURCES_DIR: {str(RESOURCES_DIR)}")
-    logger.info(f"VOICE_OUTPUT_DIR: {str(VOICE_OUTPUT_DIR)}")
-    logger.info(f"IMAGE_OUTPUT_DIR: {str(IMAGE_OUTPUT_DIR)}")
-    logger.info(f"VIDEO_OUTPUT_DIR: {str(VIDEO_OUTPUT_DIR)}\n")
-    editor_node(mock_video_state)
+    voice_file_path = r"C:\Code\sophia\hello_agent\sophia-app\resources\voice\output\627b0ff8-d351-4339-be75-ff47c0b4f1d1.mp3"
+    srt_file_path = r"C:\Code\sophia\hello_agent\sophia-app\resources\voice\output\627b0ff8-d351-4339-be75-ff47c0b4f1d1.srt"
+    generate_video_ffmpeg(voice_file_path, srt_file_path)
