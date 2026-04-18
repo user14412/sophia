@@ -1,3 +1,0 @@
-2026-04-17 15:30:11,785 - SophiaLogger - [INFO] - 🎬 开始使用ffmpeg极速合成视频...
-2026-04-17 15:30:12,046 - SophiaLogger - [INFO] - ✅ 视频合成完毕！保存至: output.mp4
-2026-04-17 15:30:12,046 - SophiaLogger - [INFO] - [同步时间测试] generate_video_ffmpeg 耗时: 0.2607 秒

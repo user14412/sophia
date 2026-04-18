@@ -101,6 +101,12 @@ class ExtendTopicItem(TypedDict):
     topic_name: str
     stages: list[StageItem]
 
+class ScriptItem(TypedDict):
+    topic_id: int
+    script_id: int
+    speaker: str
+    content: str
+
 
 # 定义全局状态结构
 class VideoState(TypedDict):
@@ -133,6 +139,7 @@ class VideoState(TypedDict):
     director_plan: list[ExtendTopicItem] | None
 
     script: str | None # 视频文案
+    script_items: list[ScriptItem] | None # 配音者，文案 
 
     """3. VIEW"""
     voice: VoiceItem | None # 配音信息

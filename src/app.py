@@ -1,14 +1,17 @@
 """
 app.py - 视频制作助手应用主入口
 """
+from pathlib import Path
 import time
 import asyncio
 import traceback
+import uuid
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import RetryPolicy
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from config import llm, VideoState, VideoStateConfig
 from content.init import init_node
@@ -29,7 +32,9 @@ from content3.agent_speechers import agent_speechers_node
 
 from config import RESOURCES_DIR
 from utils.logger import logger
+from utils.timer import time_it, async_time_it
 
+@time_it
 def create_video_pipeline():
     """创建一个简单的视频制作流程："""
     workflow = StateGraph(VideoState) # 根据状态结构定义状态图的结构
@@ -59,24 +64,67 @@ def create_video_pipeline():
     """START->init 进入路由节点"""
     workflow.add_edge(START, "init")
 
-    memory = InMemorySaver() # 内存临时存储检查点
-    video_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
+    # memory = InMemorySaver() # 内存临时存储检查点
+    # video_pipeline = workflow.compile(checkpointer=memory) # 编译状态图
 
-    logger.info("视频制作流程已编译完成")
+    # logger.info("视频制作流程已编译完成")
 
-    return video_pipeline
+    return workflow
 
+@async_time_it
+async def run_pipeline(video_workflow, config, initial_state):
+    async with AsyncSqliteSaver.from_conn_string("checkpoints.sqlite") as memory:
+        
+        video_pipeline = video_workflow.compile(checkpointer=memory)
+
+        checkpoint = await memory.aget(config)
+
+        if checkpoint is None:
+            logger.info(f"开始执行全新的持久化工作流，Thread ID: {config['configurable']['thread_id']}")
+            input_state = initial_state
+        else:
+            logger.info(f"检测到未完成的工作流，正在从上次进度恢复，Thread ID: {config['configurable']['thread_id']}")
+            input_state = None
+
+        logger.info(f"开始执行持久化工作流，Thread ID: {config['configurable']['thread_id']}")
+
+        try:
+            logger.info("=" * 60)
+
+            async for output in video_pipeline.astream(input_state, config=config):
+                for node_name, node_output in output.items():
+                    if node_output is None:
+                        # 空值判断，不然没有update的节点会报错
+                        continue
+                    if "messages" in node_output and node_output["messages"]:
+                        latest_message = node_output["messages"][-1]
+                        if isinstance(latest_message, AIMessage):
+                            match node_name:
+                                case "plan": logger.info(f"📝 策划阶段：{latest_message.content}")
+                                case "outline": logger.info(f"🧾 大纲阶段：{latest_message.content}")
+                                case "writer": logger.info(f"🧠 写作阶段：{latest_message.content}")
+                                case "voice": logger.info(f"🎤 配音阶段：{latest_message.content}")
+                                case "image": logger.info(f"🖼️ 画面阶段：{latest_message.content}")
+                                case "editor": logger.info(f"✂️ 剪辑阶段：{latest_message.content}")
+                                case "feedback": logger.info(f"🔄 反馈阶段：{latest_message.content}")
+            logger.info("\n" + "=" * 60 + "\n")
+
+        except Exception as e:
+            logger.error(f"❌ 发生错误：{type(e).__name__}: {str(e)}")
+            traceback.print_exc()
+            logger.error("请重新输入您的问题，或检查您的网络连接和API密钥配置。")
+            logger.error(f"当前进度已安全保存在 checkpoints.sqlite 中, session_id = {config['configurable']['thread_id']}，修复 Bug 后重新运行即可从断点恢复！") 
+            
+@async_time_it
 async def app():
-    start_time = time.time()
-
     """视频制作助手应用主函数"""
-    video_pipeline = create_video_pipeline()
     print("🔍 智能视频制作助手启动！")
     logger.info("智能视频制作助手启动！")
 
-    session_count = 0
-    config = {"configurable": {"thread_id": f"session-{session_count}"}}
+    """1. 创建状态图，定义节点和边（不编译）"""
+    video_workflow = create_video_pipeline()
 
+    """2. 定义初始状态"""
     video_state_config = VideoStateConfig(
         max_attempts=3,
         enable_ai_reflection=False,
@@ -92,10 +140,17 @@ async def app():
     core_topic = ""
     ref_chapter_local_path = ""
     if video_state_config['enable_podcast_specialization']:
-        ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture02.txt")
+        ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture06.txt")
+        session_name = Path(ref_chapter_local_path).stem
+        config = {"configurable": {"thread_id": f"session-{session_name}"}}
+        logger.info(f"session-{session_name} 线程已启动，正在处理参考文本：{ref_chapter_local_path}")
     else:
         core_topic = input("请输入本期视频的核心主题词（例如：康德、人工智能、量子力学等）：").strip()
-
+        session_name = uuid.uuid4().hex[:8]  # 生成一个随机的session_name
+        config = {"configurable": {"thread_id": f"session-{session_name}"}}
+        logger.info(f"session-{session_name} 线程已启动，正在处理核心主题词：{core_topic}")
+    
+    
     initial_state: VideoState = {
         "messages": [],
         "step": "init",
@@ -111,34 +166,9 @@ async def app():
 
     logger.info(f"本次项目启动状态与配置如下：\n{initial_state}\n")
 
-    try:
-        logger.info("=" * 60)
+    """3. 传入初始状态和配置，编译、执行管线"""
+    await run_pipeline(video_workflow, config, initial_state)
 
-        # 实时打印AI输出结果
-        async for output in video_pipeline.astream(initial_state, config=config):
-            for node_name, node_output in output.items():
-                if node_output is None:
-                    # 空值判断，不然没有update的节点会报错
-                    continue
-                if "messages" in node_output and node_output["messages"]:
-                    latest_message = node_output["messages"][-1]
-                    if isinstance(latest_message, AIMessage):
-                        match node_name:
-                            case "plan": logger.info(f"📝 策划阶段：{latest_message.content}")
-                            case "outline": logger.info(f"🧾 大纲阶段：{latest_message.content}")
-                            case "writer": logger.info(f"🧠 写作阶段：{latest_message.content}")
-                            case "voice": logger.info(f"🎤 配音阶段：{latest_message.content}")
-                            case "image": logger.info(f"🖼️ 画面阶段：{latest_message.content}")
-                            case "editor": logger.info(f"✂️ 剪辑阶段：{latest_message.content}")
-                            case "feedback": logger.info(f"🔄 反馈阶段：{latest_message.content}")
-        timings = time.time() - start_time
-        logger.info(f"\n🎉 视频制作流程完成！总耗时：{timings:.2f}秒")
-        logger.info("\n" + "=" * 60 + "\n")
-
-    except Exception as e:
-        logger.error(f"❌ 发生错误：{type(e).__name__}: {str(e)}")
-        # 打印详细的堆栈跟踪，直接告诉你错误在哪一行
-        traceback.print_exc()
-        logger.error("请重新输入您的问题，或检查您的网络连接和API密钥配置。")                      
+                        
 if __name__ == "__main__":
     asyncio.run(app())

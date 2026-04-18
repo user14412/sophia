@@ -27,3 +27,7 @@ models/*
 # 数据库文件
 src/chromadb/*
 !src/chromadb/.gitkeep
+
+*.mp4
+*.mp3
+*.wav
