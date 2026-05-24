@@ -140,7 +140,7 @@ async def app():
     core_topic = ""
     ref_chapter_local_path = ""
     if video_state_config['enable_podcast_specialization']:
-        ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture06.txt")
+        ref_chapter_local_path = str(RESOURCES_DIR / "documents" / "static" / "lecture02.txt")
         session_name = Path(ref_chapter_local_path).stem
         config = {"configurable": {"thread_id": f"session-{session_name}"}}
         logger.info(f"session-{session_name} 线程已启动，正在处理参考文本：{ref_chapter_local_path}")
