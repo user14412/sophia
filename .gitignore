@@ -1,33 +1,52 @@
-# 环境与密钥
+# Environment and secrets
 .env
+.env.*
+src/.env
 
-# Python 缓存与编译文件
+# Python cache and local tooling
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
 
-# VS Code 配置
+# Editor settings
 .vscode/
+.idea/
 
-# 媒体文件（保留目录结构，通过 .gitkeep 占位）
+# Runtime logs
+*.log
+src/log/
+
+# Runtime databases and checkpoints
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+src/chroma_db/
+src/checkpoints.sqlite*
+
+# Generated media directories. Keep placeholder files so empty folders can exist.
 resources/fonts/*
 !resources/fonts/.gitkeep
 resources/images/*
 !resources/images/.gitkeep
 resources/videos/*
 !resources/videos/.gitkeep
+!resources/videos/output/
+resources/videos/output/*
+!resources/videos/output/.gitkeep
 resources/voice/*
 !resources/voice/.gitkeep
 
-# 模型文件
-asset/*
-src/asset/*
-!src/asset/.gitkeep
-models/*
-!models/.gitkeep
+# Model and weight files
+asset/
+src/asset/
+models/
+*.safetensors
+*.ckpt
+*.pth
 
-# 数据库文件
-src/chromadb/*
-!src/chromadb/.gitkeep
-
+# Generated audio/video files
 *.mp4
 *.mp3
 *.wav
