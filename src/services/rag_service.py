@@ -1,9 +1,15 @@
 import time
-from typing import TypedDict, Annotated
+import hashlib
+from typing import Any, Iterable, TypedDict
 
-from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+try:
+    from langchain_chroma import Chroma
+    from langchain_huggingface import HuggingFaceEmbeddings
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    Chroma = Any
+    HuggingFaceEmbeddings = Any
+    RecursiveCharacterTextSplitter = Any
 
 from utils.logger import logger
 
@@ -12,11 +18,46 @@ class RAGComponents(TypedDict):
     embeddings: HuggingFaceEmbeddings | None
     vectorstore: Chroma | None
 
+
+def _doc_key(doc: Any) -> str:
+    doc_id = getattr(doc, "id", None)
+    if doc_id:
+        return str(doc_id)
+    metadata = getattr(doc, "metadata", {}) or {}
+    if metadata.get("id"):
+        return str(metadata["id"])
+    content = getattr(doc, "page_content", "")
+    return hashlib.md5(str(content).encode("utf-8")).hexdigest()
+
+
+def rank_rag_results(
+    rag_query_results: Iterable[tuple[Any, float]],
+    top_k: int = 3,
+    min_relevance: float = 0.5,
+) -> list[tuple[Any, float]]:
+    """Deduplicate, weight by importance/relevance, and filter noisy RAG results."""
+    unique_map: dict[str, tuple[Any, float]] = {}
+    for doc, score in rag_query_results:
+        doc_id = _doc_key(doc)
+        if doc_id not in unique_map or unique_map[doc_id][1] < score:
+            unique_map[doc_id] = (doc, score)
+
+    unique_results = list(unique_map.values())
+    unique_results.sort(
+        key=lambda item: 0.7 * (getattr(item[0], "metadata", {}) or {}).get("importance_score", 0.5)
+        + 0.3 * item[1],
+        reverse=True,
+    )
+    return [item for item in unique_results[:top_k] if item[1] >= min_relevance]
+
 # 将 RAG 组件定义为全局变量，实现懒加载（Lazy Initialization）
 _RAG_COMPONENTS = None
 
 def _init_rag_components() -> RAGComponents:
     """初始化RAG组件"""
+    if Chroma is Any or HuggingFaceEmbeddings is Any or RecursiveCharacterTextSplitter is Any:
+        raise RuntimeError("RAG dependencies are not installed. Install langchain-chroma, langchain-huggingface, and langchain-text-splitters.")
+
     logger.info("="*50)
     logger.info("触发 RAG 组件懒加载...")
     logger.info("正在初始化文本切割器...")

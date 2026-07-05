@@ -1,6 +1,7 @@
 # Environment and secrets
 .env
 .env.*
+!.env.example
 src/.env
 
 # Python cache and local tooling
@@ -8,6 +9,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+tmp/
 
 # Editor settings
 .vscode/
@@ -37,6 +39,8 @@ resources/videos/output/*
 !resources/videos/output/.gitkeep
 resources/voice/*
 !resources/voice/.gitkeep
+resources/outputs/*
+!resources/outputs/.gitkeep
 
 # Model and weight files
 asset/

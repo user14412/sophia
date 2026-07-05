@@ -269,7 +269,7 @@ async def agent_speechers_node(state: VideoState) -> Command:
             "script": script,
             "script_items": script_items
         },
-        goto="polish"
+        goto="voice"
     )
 
 if __name__ == "__main__":

@@ -1,0 +1,7 @@
+{
+  "voice_local_path": "mock://voice/ch01-demo.mp3",
+  "srt_local_path": "mock://voice/ch01-demo.srt",
+  "voice_length": 42.0,
+  "content": "demo mode uses a mocked voice artifact"
+}
+

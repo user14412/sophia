@@ -1,0 +1,29 @@
+# Core graph and LLM stack
+langgraph
+langgraph-checkpoint-sqlite
+langchain
+langchain-core
+langchain-openai
+langchain-community
+langchain-text-splitters
+langchain-huggingface
+langchain-chroma
+chromadb
+pydantic
+python-dotenv
+requests
+rich
+
+# Media pipeline
+numpy
+soundfile
+pydub
+moviepy
+
+# Optional real TTS/image backends
+torch
+dashscope
+# ChatTTS is optional and may require a platform-specific install.
+
+# Development and verification
+pytest

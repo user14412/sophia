@@ -3,12 +3,39 @@ import time
 import subprocess
 from pathlib import Path
 
-from moviepy import ImageClip, TextClip, AudioFileClip, CompositeVideoClip
-from langchain_core.messages import AIMessage
-from langgraph.types import Command
-from langgraph.graph import END
+try:
+    from moviepy import ImageClip, TextClip, AudioFileClip, CompositeVideoClip
+except ImportError:
+    ImageClip = TextClip = AudioFileClip = CompositeVideoClip = None
+try:
+    from langchain_core.messages import AIMessage
+except ImportError:
+    class AIMessage:
+        def __init__(self, content):
+            self.content = content
+try:
+    from langgraph.types import Command
+except ImportError:
+    class Command(dict):
+        def __init__(self, update=None, goto=None):
+            super().__init__(update=update, goto=goto)
+            self.update = update
+            self.goto = goto
+try:
+    from langgraph.graph import END
+except ImportError:
+    END = "__end__"
 
-from config import VideoState, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR, VideoStateConfig
+try:
+    from config import VideoState, FONT_DIR, IMAGE_OUTPUT_DIR, VIDEO_OUTPUT_DIR, VOICE_OUTPUT_DIR, RESOURCES_DIR, VideoStateConfig
+except ImportError:
+    VideoState = dict
+    VideoStateConfig = dict
+    RESOURCES_DIR = Path(__file__).resolve().parents[2] / "resources"
+    FONT_DIR = RESOURCES_DIR / "fonts"
+    IMAGE_OUTPUT_DIR = RESOURCES_DIR / "images" / "output"
+    VIDEO_OUTPUT_DIR = RESOURCES_DIR / "videos" / "output"
+    VOICE_OUTPUT_DIR = RESOURCES_DIR / "voice" / "output"
 from utils.logger import logger
 from utils.timer import time_it
 
@@ -44,6 +71,8 @@ def _parse_srt(srt_file_path):
 @time_it
 def generate_video_moviepy(voice_file_path, srt_file_path, image_items, output_path="output.mp4"):
     """将完全对齐的音频、图片和字幕合成最终视频"""
+    if ImageClip is None:
+        raise RuntimeError("moviepy is required for moviepy video generation")
     logger.info("🎬 开始使用moviepy合成视频...")
     # 视频基础设置
     VIDEO_SIZE = (1920, 1080) # 统一画布分辨率，防止图片尺寸不一导致报错
@@ -125,9 +154,7 @@ def generate_video_moviepy(voice_file_path, srt_file_path, image_items, output_p
         traceback.print_exc()
         return
 
-@time_it
-def generate_video_ffmpeg(voice_file_path, srt_file_path, image_items=[], output_path="output.mp4"):
-    logger.info("🎬 开始使用ffmpeg极速合成视频...")
+def build_ffmpeg_command(voice_file_path, srt_file_path, image_path, output_path="output.mp4"):
     srt_file_path = str(Path(srt_file_path).absolute()).replace('\\', '/').replace(':', '\\:')
 
     # 完美的字幕样式配置
@@ -139,17 +166,12 @@ def generate_video_ffmpeg(voice_file_path, srt_file_path, image_items=[], output
     # Fontname: 字体名称 (如果需要可加，如 Fontname=SimHei)
     subtitle_style = "FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=1,MarginV=40"
 
-    from config import RESOURCES_DIR
-
-    # TODO: 这里是硬编码的静态图
-    static_img_local_path = str(RESOURCES_DIR / "images" / "static" / "srnf.jpg") # HARDCODE
-    
-    command = [
+    return [
         "ffmpeg",
         "-y",
         "-loop", "1",
         "-framerate", "5",
-        "-i", static_img_local_path,
+        "-i", str(image_path),
         "-i", voice_file_path,
 
         "-vf", f"subtitles='{srt_file_path}':force_style='{subtitle_style}'",
@@ -166,8 +188,19 @@ def generate_video_ffmpeg(voice_file_path, srt_file_path, image_items=[], output
         
         "-async", "1",        
         "-fps_mode", "cfr",   # 替换掉了过时的 "-vsync", "1"，保持恒定帧率防音视频脱节
-        output_path 
+        output_path
     ]
+
+
+@time_it
+def generate_video_ffmpeg(voice_file_path, srt_file_path, image_items=[], output_path="output.mp4"):
+    logger.info("🎬 开始使用ffmpeg极速合成视频...")
+
+    from config import RESOURCES_DIR
+
+    # TODO: 这里是硬编码的静态图
+    static_img_local_path = str(RESOURCES_DIR / "images" / "static" / "srnf.jpg") # HARDCODE
+    command = build_ffmpeg_command(voice_file_path, srt_file_path, static_img_local_path, output_path)
 
     try:
         # 执行命令，隐藏原本满屏的日志，只抓取报错

@@ -1,0 +1,37 @@
+[
+  {
+    "topic_name": "从自然追问到人的转向",
+    "stages": [
+      {
+        "stage_id": 1,
+        "stage_name": "问题导入",
+        "bullets": [
+          {
+            "bullet_id": 1,
+            "intent": "用世界本原问题建立听众兴趣",
+            "guidance": "从水、火、存在等直观例子切入",
+            "transition_hint": "转向为什么这些争论会陷入僵局"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "topic_name": "苏格拉底与可对话的智能体",
+    "stages": [
+      {
+        "stage_id": 1,
+        "stage_name": "Agent 协作解释",
+        "bullets": [
+          {
+            "bullet_id": 1,
+            "intent": "解释双主持人如何分别承担提问和解释职责",
+            "guidance": "用苏格拉底式对话类比多智能体协作",
+            "transition_hint": "引出工程实现中的 Topic、Director 与 Agent Speechers"
+          }
+        ]
+      }
+    ]
+  }
+]
+

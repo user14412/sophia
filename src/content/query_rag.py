@@ -19,7 +19,7 @@ import pydantic
 from pydantic import BaseModel, Field
 
 from config import llm, VideoState, DraftItem
-from services.rag_service import RAGComponents, get_rag_components
+from services.rag_service import RAGComponents, get_rag_components, rank_rag_results
 from utils.logger import logger
 
 async def _raw_text_rag(raw_text: str) -> list[Document]:
@@ -112,28 +112,7 @@ async def _construct_rag_query(current_description: str) -> List[str]:
 
 def _process_query_results(rag_query_results, top_k: int = 3) -> list[tuple[Document, float]]:
     """去重，排序，top-k"""
-    # 1. 去重：根据文档ID去重，如果MQE生成的查询导致某条文档被重复检索到多次，则保留相关度最高的一条
-    unique_map = {}
-    for doc, score in rag_query_results:
-        doc_id = doc.id
-        if doc_id not in unique_map or unique_map[doc_id][1] <score:
-            unique_map[doc_id] = (doc, score)
-
-    unique_results = list(unique_map.values())
-    
-    # 2. 排序：根据0.7重要度 + 0.3相关度分数降序排序
-    unique_results.sort(key=lambda x: 0.7 * x[0].metadata.get("importance_score", 0.5) + 0.3 * x[1], reverse=True)
-    # 3. top-k：取前3条结果
-    top_k_results = unique_results[:top_k]
-
-    # 4. 过滤掉相关度过低的结果（比如 <0.5），避免引入过多噪声
-    top_k_results = [item for item in top_k_results if item[1] >= 0.5]
-
-    """打印出最终结果的 内容 相关度 重要度 等所有字段"""
-    # logger.info(f"\n最终用于写作阶段的RAG查询结果（共 {len(top_k_results)} 条）：")
-    # rprint(top_k_results)
-
-    return top_k_results
+    return rank_rag_results(rag_query_results, top_k=top_k, min_relevance=0.5)
 
 def query_rag_node(state: VideoState) -> Command:
     # enable_tmp_rag = False 劫持 RAG 逻辑
@@ -150,43 +129,9 @@ def query_rag_node(state: VideoState) -> Command:
             goto="writer"
         )
 
-    # 正常执行 RAG 逻辑
-    start_time = time.time()
-    logger.info(f"⏳ RAG查询中，请稍候...")
-
-    """获取RAG组件"""
-    rag_components = get_rag_components()
-
-    current_draft_id = state["current_draft_id"]
-    current_description = state['draft'][current_draft_id]['section_description']
-    current_script = ""
-
-    """构造RAG查询"""
-    constructed_rag_querys = _construct_rag_query(current_description)
-
-    """执行RAG查询"""
-    rag_query_results = []
-    for idx, constructed_rag_query in enumerate(constructed_rag_querys):
-        # logger.info(f"\n正在执行第 {idx+1} 条RAG查询...")
-        rag_query_results.extend(_query_rag(rag_components, constructed_rag_query, top_k=5))
-    
-    """去重，排序，top-k"""
-    top_k_results = _process_query_results(rag_query_results, top_k=7) # 处理的top_k比查询的top_k大一些，是为了防止HyDE相关度过大，屏蔽原始查询和MQE查询的结果
-    rag_query_results = [doc.page_content for doc, score in top_k_results]
-
-    logger.info(f"🧠 RAG查询完成！耗时：{time.time() - start_time:.2f}秒\n")
-    # logger.info(f"📋 查询到的内容如下：")
-    # rprint(top_k_results)
-
-    return Command(
-        update={
-            "messages": [AIMessage(content=f"RAG查询完成，查询到的内容如下：{top_k_results}")],
-            "step": "writer",
-            "timings": {"writer_node": time.time() - start_time},
-
-            "rag_query_results": rag_query_results          
-        },
-        goto="writer"
+    raise RuntimeError(
+        "The legacy v2.1 query_rag_node requires async RAG and is not the default ch01 path. "
+        "Use the v3 podcast pipeline or run with --disable-rag for the legacy flow."
     )
 
 if __name__ == "__main__":

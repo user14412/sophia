@@ -29,8 +29,9 @@ def _parse_json_response(content: str):
                 pass
         
         # 如果还是不行，可能是因为模型在 JSON 内部用了非法字符，或者截断了
-        logger.error(f"JSON 解析失败，原始内容: {content}")
-        return [] # 返回空列表防止程序崩溃
+        message = f"Topic JSON parse failed. Raw content starts with: {content[:500]}"
+        logger.error(message)
+        raise ValueError(message)
 
 
 TOPIC_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([

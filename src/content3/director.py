@@ -250,7 +250,7 @@ async def get_topic_plan(topic, max_retries=3):
             logger.error(f"生成过程中发生错误: {e}")
 
       # 稍微等一小会儿再重试，防止 API 并发限制
-      time.sleep(2)
+      await asyncio.sleep(2)
     
     logger.error(f"❌ '{topic_name}' 大纲生成失败，已达到最大重试次数！")
     # # 抛出异常中断

@@ -2,30 +2,124 @@
 view.voice - 视频制作助手的配音模块，负责将生成的视频文案转换成配音文件和字幕文件
 """
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv():
+        return None
 load_dotenv()
 from pathlib import Path
 import re
 import math
-import numpy as np
-import rich
-import soundfile as sf
-from pydub import AudioSegment
-import torch
+try:
+    import numpy as np
+except ImportError:
+    class _NumpyFallback:
+        ndarray = object
+        float32 = float
+
+        class random:
+            @staticmethod
+            def seed(seed):
+                return None
+
+        @staticmethod
+        def array(value):
+            return value
+
+        @staticmethod
+        def zeros(length, dtype=None):
+            return [0.0] * length
+
+        @staticmethod
+        def concatenate(values, axis=0):
+            result = []
+            for value in values:
+                result.extend(value)
+            return result
+
+    np = _NumpyFallback()
+try:
+    import rich
+except ImportError:
+    rich = None
+try:
+    import soundfile as sf
+except ImportError:
+    sf = None
+try:
+    from pydub import AudioSegment
+except ImportError:
+    AudioSegment = None
+try:
+    import torch
+except ImportError:
+    torch = None
 import time
 from uuid import uuid4
-from pydantic import BaseModel, Field
-import requests
+try:
+    from pydantic import BaseModel, Field
+except ImportError:
+    class BaseModel:
+        pass
+
+    def Field(default=None, **kwargs):
+        return default
+try:
+    import requests
+except ImportError:
+    requests = None
 import io
 import asyncio
 
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langgraph.types import Command
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-import ChatTTS
+try:
+    from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+except ImportError:
+    class SystemMessage:
+        def __init__(self, content):
+            self.content = content
 
-from config import ScriptItem, VideoState, llm, VoiceItem, VOICE_OUTPUT_DIR, RESOURCES_DIR
+    class HumanMessage(SystemMessage):
+        pass
+
+    class AIMessage(SystemMessage):
+        pass
+try:
+    from langgraph.types import Command
+except ImportError:
+    class Command(dict):
+        def __init__(self, update=None, goto=None):
+            super().__init__(update=update, goto=goto)
+            self.update = update
+            self.goto = goto
+try:
+    from langchain_core.prompts import ChatPromptTemplate
+except ImportError:
+    ChatPromptTemplate = None
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    class RecursiveCharacterTextSplitter:
+        def __init__(self, chunk_size=70, chunk_overlap=0):
+            self.chunk_size = chunk_size
+
+        def split_documents(self, docs):
+            result = []
+            for doc in docs:
+                text = getattr(doc, "page_content", "")
+                for idx in range(0, len(text), self.chunk_size):
+                    result.append(type("DocumentChunk", (), {"page_content": text[idx:idx + self.chunk_size]})())
+            return result
+
+try:
+    from config import ScriptItem, VideoState, llm, VoiceItem, VOICE_OUTPUT_DIR, RESOURCES_DIR
+except ImportError:
+    ScriptItem = dict
+    VideoState = dict
+    VoiceItem = dict
+    llm = None
+    RESOURCES_DIR = Path(__file__).resolve().parents[2] / "resources"
+    VOICE_OUTPUT_DIR = RESOURCES_DIR / "voice" / "output"
 from utils.logger import logger
 from utils.timer import time_it, async_time_it
 
@@ -58,6 +152,7 @@ class ChatTTSProvider(BaseTTSProvider):
     """ChatTTS 的具体实现类"""
     def __init__(self):
         import ChatTTS
+        self.chat_module = ChatTTS
         logger.info("正在初始化 ChatTTS 引擎...")
         self.chat = ChatTTS.Chat()
         # 注意：这里请替换为你实际加载模型的代码
@@ -77,6 +172,8 @@ class ChatTTSProvider(BaseTTSProvider):
         seed = self.speakers.get(speaker_id, 1111)
 
         # # 2. 【核心修复】：强制劫持全局随机种子
+        if torch is None:
+            raise RuntimeError("torch is required for ChatTTSProvider")
         torch.manual_seed(seed)
         np.random.seed(seed)
         # 因为你现在用显卡推理，强烈建议一并固定 CUDA 的种子
@@ -90,7 +187,7 @@ class ChatTTSProvider(BaseTTSProvider):
         spk_emb = self.chat.sample_random_speaker()
         
         # 使用源码里的InferCodeParam类包装参数传参
-        params = ChatTTS.Chat.InferCodeParams(
+        params = self.chat_module.Chat.InferCodeParams(
             spk_emb=spk_emb,
             temperature=0.3,  # 默认为0.3左右，降到0.001彻底消除随机漂移
             top_P=0.7,       # 过滤掉低概率的杂音
@@ -199,6 +296,8 @@ class SoVitsProvider(BaseTTSProvider):
     
     def _fetch_and_read_audio(self, params: dict) -> tuple[np.ndarray, int]:
         """同步请求方法，放到线程池里跑，避免阻塞事件循环"""
+        if sf is None:
+            raise RuntimeError("soundfile is required for GPT-SoVITS audio decoding")
         response = requests.get(self.api_url, params=params)
         response.raise_for_status()
 
@@ -212,8 +311,10 @@ class SoVitsProvider(BaseTTSProvider):
 
 # 辅助函数：将秒数转换为 SRT 格式的时间码 (00:00:00,000)
 def _format_srt_time(seconds: float) -> str:
-    millisec = int((seconds - int(seconds)) * 1000)
-    mins, sec = divmod(int(seconds), 60)
+    total_millis = int(round(seconds * 1000))
+    millisec = total_millis % 1000
+    total_seconds = total_millis // 1000
+    mins, sec = divmod(total_seconds, 60)
     hours, mins = divmod(mins, 60)
     return f"{hours:02d}:{mins:02d}:{sec:02d},{millisec:03d}"
 
@@ -449,6 +550,8 @@ class ExportNode:
         master_audio_array = np.concatenate(all_audio_arrays, axis=0)
         
         # 保存为临时的 wav 文件
+        if sf is None:
+            raise RuntimeError("soundfile is required for exporting audio")
         temp_wav = f"{output_name}_temp.wav"
         sf.write(temp_wav, master_audio_array, sample_rate)
         
@@ -456,6 +559,8 @@ class ExportNode:
         logger.info("正在将音频转换为 MP3...")
         mp3_path = f"{output_name}.mp3"
         try:
+            if AudioSegment is None:
+                raise RuntimeError("pydub is not installed")
             audio_seg = AudioSegment.from_wav(temp_wav)
             audio_seg.export(mp3_path, format="mp3")
             os.remove(temp_wav) # 删掉临时 wav 文件
