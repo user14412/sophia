@@ -11,8 +11,12 @@ langchain-chroma
 chromadb
 pydantic
 python-dotenv
+python-multipart
 requests
 rich
+fastapi
+uvicorn
+httpx
 
 # Media pipeline
 numpy
