@@ -9,10 +9,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from runtime.artifacts import ArtifactStore
-from runtime.artifacts import RunManifest, StageArtifact, utc_now
+from runtime.artifacts import ArtifactStore, RunManifest, new_manifest, script_from_items, utc_now
 from runtime.health import validate_runtime
-from runtime.run_config import DEFAULT_OUTPUT_DIR, PROJECT_ROOT, RunMode, STAGE_ORDER, StageName, load_run_config
+from runtime.run_config import DEFAULT_OUTPUT_DIR, PROJECT_ROOT, RunMode, StageName, load_run_config
 from runtime.runner import run_pipeline, run_stage
 from utils.logger import logger
 from web_api.schemas import ApiResult, ArtifactBundle, RunRequest, SessionSummary, SmokeTestResult
@@ -72,16 +71,6 @@ def _read_json_upload(content: bytes) -> Any:
         raise InvalidUploadError(f"Invalid JSON upload: {exc}") from exc
 
 
-def _script_from_items(items: Any) -> str | None:
-    if not isinstance(items, list):
-        return None
-    lines = []
-    for item in items:
-        if isinstance(item, dict):
-            lines.append(f"{item.get('speaker', 'A')}: {item.get('content', '')}")
-    return "\n".join(lines) if lines else None
-
-
 def _output_dir(output_dir: Path | str | None = None) -> Path:
     return Path(output_dir) if output_dir is not None else DEFAULT_OUTPUT_DIR
 
@@ -90,17 +79,7 @@ def _load_or_new_manifest_for_import(store: ArtifactStore, session_id: str) -> R
     existing = store.load_manifest(session_id)
     if existing is not None:
         return existing
-    now = utc_now()
-    return RunManifest(
-        session_id=session_id,
-        mode=RunMode.STAGE,
-        started_at=now,
-        updated_at=now,
-        config_snapshot={"source": "web import"},
-        stages={stage.value: "pending" for stage in STAGE_ORDER},
-        artifacts=[],
-        errors=[],
-    )
+    return new_manifest(session_id, RunMode.STAGE, {"source": "web import"})
 
 
 def _load_or_new_manifest_for_source(session_id: str, source_path: Path) -> RunManifest:
@@ -109,34 +88,16 @@ def _load_or_new_manifest_for_source(session_id: str, source_path: Path) -> RunM
     if existing is not None:
         existing.config_snapshot["uploaded_source"] = str(source_path)
         return existing
-    now = utc_now()
-    return RunManifest(
-        session_id=session_id,
-        mode=RunMode.STAGE,
-        started_at=now,
-        updated_at=now,
-        config_snapshot={"source": "web source upload", "uploaded_source": str(source_path)},
-        stages={stage.value: "pending" for stage in STAGE_ORDER},
-        artifacts=[],
-        errors=[],
+    return new_manifest(
+        session_id,
+        RunMode.STAGE,
+        {"source": "web source upload", "uploaded_source": str(source_path)},
     )
 
 
 def _save_import_artifact(store: ArtifactStore, session_id: str, stage: StageName, payload: dict[str, Any]) -> None:
     manifest = _load_or_new_manifest_for_import(store, session_id)
-    artifact = StageArtifact(
-        stage=stage,
-        session_id=session_id,
-        path=Path(),
-        created_at=utc_now(),
-        summary=f"imported {STAGE_INPUT_FILES[stage]} from web upload",
-        payload=payload,
-    )
-    store.save(artifact)
-    manifest.stages[stage.value] = "done"
-    manifest.artifacts = [item for item in manifest.artifacts if item.stage != stage]
-    manifest.artifacts.append(artifact)
-    manifest.updated_at = utc_now()
+    store.save_stage(manifest, stage, f"imported {STAGE_INPUT_FILES[stage]} from web upload", payload)
     store.save_manifest(manifest)
 
 
@@ -222,8 +183,9 @@ def get_artifact_bundle(session_id: str, output_dir: Path | str | None = None) -
     _validate_session_id(session_id)
     store = ArtifactStore(_output_dir(output_dir))
     session_dir = store.session_dir(session_id)
+    manifest = store.load_manifest(session_id)
     bundle = ArtifactBundle(
-        manifest=store.load_manifest(session_id).to_dict() if store.load_manifest(session_id) else None,
+        manifest=manifest.to_dict() if manifest else None,
         source_upload=_read_source_upload_metadata(session_id),
         run_log=_read_text_if_exists(session_dir / "run.log"),
         topic=store.read_json(session_id, "topic.json"),
@@ -318,7 +280,7 @@ def import_stage_input(session_id: str, stage_name: str, filename: str, content:
     store.write_json(session_id, target_file, payload_data)
 
     if stage == StageName.AGENT_SPEECHERS:
-        script_text = _script_from_items(payload_data)
+        script_text = script_from_items(payload_data)
         if script_text:
             store.write_text(session_id, "script.txt", script_text)
 

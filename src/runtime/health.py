@@ -5,7 +5,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from runtime.run_config import AppRunConfig, PROJECT_ROOT, RunMode
+from runtime.run_config import AppRunConfig, STATIC_IMAGE_PATH, RunMode
 
 
 @dataclass(slots=True)
@@ -55,7 +55,7 @@ def validate_runtime(config: AppRunConfig) -> list[ServiceHealth]:
     checks.append(_env_check("DASHSCOPE_API_KEY", image_required))
 
     static_required = config.mode == RunMode.FULL and config.image_mode == "static"
-    static_image = PROJECT_ROOT / "resources" / "images" / "static" / "srnf.jpg"
+    static_image = STATIC_IMAGE_PATH
     checks.append(_health(
         "static_image",
         static_required,

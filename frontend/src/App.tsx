@@ -109,25 +109,6 @@ export default function App() {
     }
   }
 
-  async function uploadWithFeedback(action: () => Promise<{ ok: boolean; message: string }>) {
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const result = await action();
-      if (result.ok) {
-        setMessage(result.message);
-      } else {
-        setError(result.message);
-      }
-      await refreshAll(sessionId);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleSmoke(target: string) {
     setLoading(true);
     setError(null);
@@ -262,9 +243,9 @@ export default function App() {
             <UploadPanel
               sessionId={sessionId}
               loading={loading}
-              onUploadSource={(file) => uploadWithFeedback(() => uploadSource(sessionId, file))}
+              onUploadSource={(file) => runWithFeedback(() => uploadSource(sessionId, file))}
               onUploadStageInput={(inputStage, file) =>
-                uploadWithFeedback(() => uploadStageInput(sessionId, inputStage, file))
+                runWithFeedback(() => uploadStageInput(sessionId, inputStage, file))
               }
             />
             <SmokePanel loading={loading} results={smokeResults} onRun={handleSmoke} />

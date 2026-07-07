@@ -12,6 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REF_CHAPTER = PROJECT_ROOT / "resources" / "documents" / "static" / "lecture02.txt"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "resources" / "outputs"
 DEFAULT_CHECKPOINT_PATH = PROJECT_ROOT / "checkpoints.sqlite"
+STATIC_IMAGE_PATH = PROJECT_ROOT / "resources" / "images" / "static" / "srnf.jpg"
 
 
 def load_project_env(env_path: Path = PROJECT_ROOT / ".env") -> None:

@@ -80,7 +80,7 @@ export function ArtifactViewer({ bundle }: { bundle: ArtifactBundle | null }) {
       <div className="panelHeader">
         <FileText size={18} />
         <h2>Artifacts</h2>
-        <span className="countPill">{filledCount}/9</span>
+        <span className="countPill">{filledCount}/{TABS.length}</span>
       </div>
       <div className="tabs">
         {TABS.map((item) => (

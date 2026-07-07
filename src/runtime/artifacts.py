@@ -6,11 +6,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from runtime.run_config import RunMode, StageName
+from runtime.run_config import RunMode, STAGE_ORDER, StageName
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def script_from_items(items: Any) -> str:
+    """Join script items into a "speaker: content" transcript."""
+    if not isinstance(items, list):
+        return ""
+    return "\n".join(
+        f"{item.get('speaker', 'A')}: {item.get('content', '')}"
+        for item in items
+        if isinstance(item, dict)
+    )
 
 
 @dataclass(slots=True)
@@ -77,6 +88,21 @@ class RunManifest:
         )
 
 
+def new_manifest(session_id: str, mode: RunMode, config_snapshot: dict[str, Any]) -> "RunManifest":
+    """Create a fresh manifest with every stage marked pending."""
+    now = utc_now()
+    return RunManifest(
+        session_id=session_id,
+        mode=mode,
+        started_at=now,
+        updated_at=now,
+        config_snapshot=config_snapshot,
+        stages={stage.value: "pending" for stage in STAGE_ORDER},
+        artifacts=[],
+        errors=[],
+    )
+
+
 class ArtifactStore:
     def __init__(self, output_dir: Path | str):
         self.output_dir = Path(output_dir)
@@ -97,6 +123,28 @@ class ArtifactStore:
         artifact.path = target
         target.write_text(json.dumps(artifact.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         return target
+
+    def save_stage(
+        self,
+        manifest: RunManifest,
+        stage: StageName,
+        summary: str,
+        payload: dict[str, Any],
+    ) -> StageArtifact:
+        """Persist a stage artifact and mark it done in the manifest (deduping prior entries)."""
+        artifact = StageArtifact(
+            stage=stage,
+            session_id=manifest.session_id,
+            path=Path(),
+            created_at=utc_now(),
+            summary=summary,
+            payload=payload,
+        )
+        self.save(artifact)
+        manifest.stages[stage.value] = "done"
+        manifest.artifacts = [item for item in manifest.artifacts if item.stage != stage]
+        manifest.artifacts.append(artifact)
+        return artifact
 
     def load(self, session_id: str, stage: StageName) -> StageArtifact | None:
         path = self.artifacts_dir(session_id) / f"{stage.value}.json"

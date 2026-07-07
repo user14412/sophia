@@ -1,12 +1,22 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from runtime.artifacts import ArtifactStore, RunManifest, StageArtifact, utc_now
+from runtime.artifacts import ArtifactStore, RunManifest, StageArtifact, new_manifest, script_from_items
 from runtime.fixtures import load_demo_fixture
-from runtime.run_config import AppRunConfig, RunMode, STAGE_ORDER, StageName
+from runtime.run_config import AppRunConfig, RunMode, StageName
 from utils.logger import logger
+
+
+def _mock_images() -> list[dict[str, Any]]:
+    return [
+        {
+            "scene_id": 1,
+            "img_local_path": "mock://image/static.jpg",
+            "start_time": "00:00:00,000",
+            "end_time": "00:00:42,000",
+        }
+    ]
 
 
 def prepare_initial_state(config: AppRunConfig) -> dict[str, Any]:
@@ -41,30 +51,12 @@ def prepare_initial_state(config: AppRunConfig) -> dict[str, Any]:
     }
 
 
-def _new_manifest(config: AppRunConfig) -> RunManifest:
-    now = utc_now()
-    return RunManifest(
-        session_id=config.session_id,
-        mode=config.mode,
-        started_at=now,
-        updated_at=now,
-        config_snapshot=config.to_dict(),
-        stages={stage.value: "pending" for stage in STAGE_ORDER},
-        artifacts=[],
-        errors=[],
-    )
-
-
 def _load_or_new_manifest(store: ArtifactStore, config: AppRunConfig) -> RunManifest:
     if not config.force_new_session:
         existing = store.load_manifest(config.session_id)
         if existing is not None:
             return existing
-    return _new_manifest(config)
-
-
-def _script_from_items(items: list[dict[str, Any]]) -> str:
-    return "\n".join(f"{item.get('speaker', 'A')}: {item.get('content', '')}" for item in items)
+    return new_manifest(config.session_id, config.mode, config.to_dict())
 
 
 def _save_artifact(
@@ -74,19 +66,7 @@ def _save_artifact(
     summary: str,
     payload: dict[str, Any],
 ) -> StageArtifact:
-    artifact = StageArtifact(
-        stage=stage,
-        session_id=manifest.session_id,
-        path=Path(),
-        created_at=utc_now(),
-        summary=summary,
-        payload=payload,
-    )
-    store.save(artifact)
-    manifest.stages[stage.value] = "done"
-    manifest.artifacts = [item for item in manifest.artifacts if item.stage != stage]
-    manifest.artifacts.append(artifact)
-    return artifact
+    return store.save_stage(manifest, stage, summary, payload)
 
 
 def _command_update(command: Any) -> dict[str, Any]:
@@ -113,7 +93,7 @@ def _load_stage_state(store: ArtifactStore, config: AppRunConfig) -> dict[str, A
         state["director_plan"] = director_plan
     if script_items is not None:
         state["script_items"] = script_items
-        state["script"] = _script_from_items(script_items)
+        state["script"] = script_from_items(script_items)
     if voice is not None:
         state["voice"] = voice
     if images is not None:
@@ -168,7 +148,7 @@ async def _run_real_stage(config: AppRunConfig, stage: StageName, store: Artifac
         command = await agent_speechers_node(state)
         update = _command_update(command)
         script_items = update.get("script_items")
-        script = update.get("script") or (_script_from_items(script_items) if script_items else None)
+        script = update.get("script") or (script_from_items(script_items) if script_items else None)
         if not script_items or not script:
             raise RuntimeError("Real agent_speechers stage did not produce script and script_items.")
         store.write_json(config.session_id, "script_items.json", script_items)
@@ -230,7 +210,7 @@ async def _run_demo_pipeline(config: AppRunConfig) -> RunManifest:
     director_plan = load_demo_fixture("director_plan")
     script_items = load_demo_fixture("script_items")
     voice_summary = load_demo_fixture("voice_summary")
-    script = _script_from_items(script_items)
+    script = script_from_items(script_items)
 
     _save_artifact(store, manifest, StageName.TOPIC, "demo topic plan", {"topic_plan": topic_plan})
     store.write_json(config.session_id, "topic.json", topic_plan)
@@ -245,14 +225,7 @@ async def _run_demo_pipeline(config: AppRunConfig) -> RunManifest:
     _save_artifact(store, manifest, StageName.VOICE, "mock voice artifact", voice_summary)
     store.write_json(config.session_id, "voice.json", voice_summary)
 
-    images = [
-        {
-            "scene_id": 1,
-            "img_local_path": "mock://image/static.jpg",
-            "start_time": "00:00:00,000",
-            "end_time": "00:00:42,000",
-        }
-    ]
+    images = _mock_images()
     _save_artifact(store, manifest, StageName.IMAGE, "mock image artifact", {"images": images})
     store.write_json(config.session_id, "images.json", images)
 
@@ -328,7 +301,7 @@ async def run_stage(config: AppRunConfig, stage: StageName | None) -> StageArtif
         payload = {"script_items": script_items}
         artifact = _save_artifact(store, manifest, stage, "stage script fixture", payload)
         store.write_json(config.session_id, "script_items.json", script_items)
-        store.write_text(config.session_id, "script.txt", _script_from_items(script_items))
+        store.write_text(config.session_id, "script.txt", script_from_items(script_items))
     elif stage == StageName.VOICE:
         script_items = store.read_json(config.session_id, "script_items.json")
         if script_items is None:
@@ -339,14 +312,7 @@ async def run_stage(config: AppRunConfig, stage: StageName | None) -> StageArtif
     elif stage == StageName.IMAGE:
         if store.load(config.session_id, StageName.VOICE) is None:
             raise RuntimeError(f"Missing voice artifact for session '{config.session_id}'. Run voice first.")
-        images = [
-            {
-                "scene_id": 1,
-                "img_local_path": "mock://image/static.jpg",
-                "start_time": "00:00:00,000",
-                "end_time": "00:00:42,000",
-            }
-        ]
+        images = _mock_images()
         payload = {"images": images}
         artifact = _save_artifact(store, manifest, stage, "stage mock image", payload)
         store.write_json(config.session_id, "images.json", images)
